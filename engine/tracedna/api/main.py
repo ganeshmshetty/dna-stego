@@ -22,6 +22,8 @@ from ..config import (
     MAX_PASTE_NT,
     MAX_STRANDS,
     MAX_UPLOAD_BYTES,
+    OUTER_K,
+    OUTER_R,
     STRAND_LENGTH,
 )
 from ..types import ChannelParams, CodecParams, Strand
@@ -120,6 +122,7 @@ def create_session() -> dict[str, Any]:
         "params": {
             "strand_length": STRAND_LENGTH,
             "ecc": {"scheme": "rs", "n": 50, "k": 34},
+            "outer": {"k": OUTER_K, "r": OUTER_R},
             "watermark": {"mode": "reserved", "field_nt": 16, "bits": 32},
             "payload_bytes_per_strand": 26,
         },
@@ -175,7 +178,9 @@ def encode_session(session_id: str, body: EncodeRequest | None = None) -> dict[s
     params = CodecParams(watermark_mode=mode)  # type: ignore[arg-type]
     params.validate()
 
-    expected_strands = -(-len(data) // params.payload_bytes_per_strand)
+    data_blocks = -(-len(data) // params.payload_bytes_per_strand)
+    stripes = -(-data_blocks // params.outer_k)
+    expected_strands = stripes * (params.outer_k + params.outer_r)
     if expected_strands > MAX_STRANDS:
         return _error(
             422,
@@ -276,6 +281,7 @@ def recover_session(session_id: str) -> dict[str, Any]:
         "strands_in": artifact["channel_stats"]["strands_out"],
         "strands_used": result.strands_used,
         "strands_failed": result.strands_failed,
+        "blocks_reconstructed": result.blocks_reconstructed,
     }
     store.save(session_id, artifact)
     return artifact["recovery"]

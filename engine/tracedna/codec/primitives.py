@@ -137,8 +137,8 @@ def pack_data_block(index: int, payload: bytes, valid_len: int, mark: bytes = b"
         raise ValueError("strand index must fit in 2 bytes")
     if len(payload) != payload_width:
         raise ValueError(f"payload must be {payload_width} bytes, got {len(payload)}")
-    if not 1 <= valid_len <= payload_width:
-        raise ValueError(f"valid_len must be in 1..{payload_width}, got {valid_len}")
+    if not 0 <= valid_len <= payload_width:
+        raise ValueError(f"valid_len must be in 0..{payload_width}, got {valid_len}")
 
     data = bytearray(RS_K)
     data[0:2] = index.to_bytes(2, "big")
@@ -161,7 +161,7 @@ def unpack_data_block(data: bytes, mark_bytes: int = MARK_BYTES) -> tuple[int, i
     payload_width = RS_K - HEADER_BYTES - mark_bytes
     if mark_bytes < 0 or payload_width < 1:
         return None
-    if not 1 <= valid_len <= payload_width:
+    if not 0 <= valid_len <= payload_width:
         return None
     mark = bytes(data[4 : 4 + mark_bytes])
     payload = bytes(data[4 + mark_bytes :])

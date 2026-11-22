@@ -145,6 +145,7 @@ Every page reads and mutates one JSON document. This is the spine of the app.
   "params": {
     "strand_length": 200,
     "ecc": { "scheme": "rs", "n": 50, "k": 34 },
+    "outer": { "k": 12, "r": 4 },
     "scramble_seed": 167,
     "scramble": "fixed, key-independent",
     "watermark": { "mode": "reserved", "field_nt": 16, "bits": 32 },
@@ -154,7 +155,7 @@ Every page reads and mutates one JSON document. This is the spine of the app.
     { "index": 0, "seq": "ACGT…200nt", "payload_bytes": 26, "gc": 0.51,
       "max_homopolymer": 3, "marked": true }
   ],
-  "stats": { "strand_count": 41, "nt_total": 8200, "bits_per_nt": 1.04 },
+  "stats": { "strand_count": 64, "nt_total": 12800, "bits_per_nt": 0.64 },
   "channel": { "sub": 0.0, "ins": 0.0, "del": 0.0, "dropout": 0.0,
                "seed": 1, "applied": false },
   "noisy_strands": [ { "index": 0, "seq": "…", "survived": true } ],
@@ -211,8 +212,19 @@ information beyond the strand itself. Nothing in the encoder depends on a secret
 4. Compare against the original by `sha256`; compute pre-ECC and post-ECC BER.
 
 **Why this layout:** 200 nt = 50 bytes at 2 bits/base. RS(50,34) leaves 34 data bytes.
-Unmarked that is **1.20 bits/nt**; with the 4-byte reserved mark field it is **1.04 bits/nt**.
-Constants live in one config module so the report can quote them exactly.
+Unmarked that is **1.20 bits/nt** gross; with the 4-byte reserved mark, **1.04 bits/nt** gross.
+
+**Outer layer (cross-strand erasure coding).** Strands are grouped into stripes of
+`OUTER_K = 12` data blocks plus `OUTER_R = 4` parity blocks. The outer code is a
+Reed–Solomon code over GF(256) applied vertically, one byte column at a time, so any 12 of
+the 16 strands in a stripe reconstruct that stripe. Without this layer a single dropped
+strand loses the file, and no realistic channel is survivable.
+
+Net density after the outer layer is **0.90 bits/nt** unmarked and **0.78 bits/nt** with the
+reserved mark, for a full stripe. Real files round up to whole stripes, so the measured
+figure is lower for small payloads (a 1 KB marked file lands at 0.64 bits/nt). Report the
+measured value, never the nominal one. Constants live in one config module so the report can
+quote them exactly.
 
 ### 7.2 Channel
 
@@ -221,9 +233,14 @@ Symmetric, per-nucleotide, order fixed as: substitution → insertion → deleti
 | Parameter | Range | Default presets |
 |---|---|---|
 | Substitution rate | 0 – 3% | Clean 0% · Realistic 0.5% · Harsh 2% |
-| Insertion rate | 0 – 3% | 0% · 0.1% · 1% |
-| Deletion rate | 0 – 3% | 0% · 0.1% · 1% |
-| Strand dropout | 0 – 50% | 0% · 10% · 30% |
+| Insertion rate | 0 – 1% | 0% · 0.01% · 0.03% |
+| Deletion rate | 0 – 1% | 0% · 0.01% · 0.03% |
+| Strand dropout | 0 – 50% | 0% · 2% · 10% |
+
+Per-base indel rates are an order of magnitude below substitution rates, matching
+Illumina-class readout. An earlier draft used 0.1% per base, which is roughly 100× too
+high: it destroyed a third of strands by frame-shifting alone and made whole-file recovery
+impossible. The preset was corrected rather than the target.
 
 - Deterministic given `(sub, ins, del, dropout, seed)`.
 - Insertions sample a uniformly random base.
@@ -247,8 +264,8 @@ Symmetric, per-nucleotide, order fixed as: substitution → insertion → deleti
   per strand) but not indels or prefix truncation. That limitation is measured and reported
   honestly; it is the main motivation for v1, whose detector is position-independent.
 - Reported cost: `32 bits / 200 nt = 0.16 bits/nt`. That is 8% of the strand length and
-  13% of unmarked payload capacity (1.20 → 1.04 bits/nt). The number is measured, not
-  asserted.
+  13% of unmarked payload capacity (1.20 → 1.04 bits/nt gross; 0.90 → 0.78 after the outer
+  erasure layer). The number is measured, not asserted.
 
 **v1 — keyed tournament sampling (target: near-zero cost).**
 
@@ -453,6 +470,8 @@ No page may display a metric it did not compute in the current run.
 
 - **Codec:** property test — random files of 1 B … 64 KB must round-trip exactly with a
   clean channel. Golden file for a fixed payload and seed.
+- **Outer code:** a stripe with up to `OUTER_R` strands removed must reconstruct exactly;
+  one more removal must fail cleanly rather than return a plausible wrong file.
 - **Channel:** statistical test — realised rates within 10% of requested rates over 1e6
   nucleotides; determinism test for a fixed seed.
 - **Watermark:** a set of 41 clean marked strands must give `p < 1e-9`; strands marked for
@@ -470,7 +489,7 @@ No page may display a metric it did not compute in the current run.
 | # | Deliverable | Acceptance |
 |---|---|---|
 | M0 | Repo scaffold, pinned deps, spec committed | `make dev` starts both processes; blank five-page shell renders |
-| M1 | Codec + channel + Recover, no mark | 1 KB file round-trips exactly at Clean; BER table produced |
+| M1 | Codec + outer erasure code + channel + Recover, no mark | 1 KB file round-trips exactly at Clean **and** Realistic; BER table produced |
 | M2 | v0 watermark + verifier | TPR > 0.99 at FPR 1% on clean strand sets; wrong key rejected |
 | M3 | Fingerprint per recipient + Trace UI | Recipient identified at > 0.99 accuracy; measured mark cost reported |
 | M4 | Steganalysis attacker + Results page | AUC with CI published; v0's visibility honestly reported |

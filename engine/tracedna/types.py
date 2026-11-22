@@ -12,6 +12,8 @@ from typing import Literal
 from .config import (
     HEADER_BYTES,
     MARK_BYTES,
+    OUTER_K,
+    OUTER_R,
     PAYLOAD_BYTES_NONE,
     PAYLOAD_BYTES_RESERVED,
     RS_K,
@@ -30,6 +32,8 @@ class CodecParams:
     rs_n: int = RS_N
     rs_k: int = RS_K
     watermark_mode: WatermarkMode = "reserved"
+    outer_k: int = OUTER_K
+    outer_r: int = OUTER_R
 
     @property
     def payload_bytes_per_strand(self) -> int:
@@ -50,6 +54,12 @@ class CodecParams:
             raise ValueError("invalid Reed-Solomon geometry")
         if HEADER_BYTES + self.mark_bytes >= self.rs_k:
             raise ValueError("header + mark consume the whole data block")
+        if self.outer_k < 1:
+            raise ValueError("outer_k must be at least 1")
+        if self.outer_r < 0:
+            raise ValueError("outer_r must be non-negative")
+        if self.outer_k + self.outer_r > 255:
+            raise ValueError("outer_k + outer_r must not exceed the GF(256) symbol space")
 
 
 @dataclass
@@ -109,6 +119,7 @@ class DecodeResult:
     bytes_recovered: int
     strands_used: int
     strands_failed: int
+    blocks_reconstructed: int = 0
     ber_pre_ecc: float | None = None
     ber_post_ecc: float | None = None
 

@@ -38,6 +38,12 @@ MARK_NT = MARK_BYTES * 4     # 16 nucleotides
 PAYLOAD_BYTES_NONE = RS_K - HEADER_BYTES                    # 30
 PAYLOAD_BYTES_RESERVED = RS_K - HEADER_BYTES - MARK_BYTES   # 26
 
+# Cross-strand erasure coding. Each stripe holds OUTER_K data blocks plus
+# OUTER_R parity blocks, so any OUTER_K of the OUTER_K + OUTER_R strands
+# reconstruct the stripe. Without this, a single dropped strand loses the file.
+OUTER_K = 12
+OUTER_R = 4
+
 # v1: keyed tournament sampling.
 CONTEXT_LEN = 4              # hash context length (bases)
 TOURNAMENT_DEPTH = 8         # tournament layers
@@ -49,9 +55,9 @@ MIN_SEQUENCE_NT = 40
 
 # --- channel presets (used by the UI and the evaluation sweeps) ------------
 CHANNEL_PRESETS = {
-    "clean":     {"sub": 0.0,   "ins": 0.0,   "del": 0.0,   "dropout": 0.0},
-    "realistic": {"sub": 0.005, "ins": 0.001, "del": 0.001, "dropout": 0.10},
-    "harsh":     {"sub": 0.02,  "ins": 0.01,  "del": 0.01,  "dropout": 0.30},
+    "clean":     {"sub": 0.0,   "ins": 0.0,    "del": 0.0,    "dropout": 0.0},
+    "realistic": {"sub": 0.005, "ins": 0.0001, "del": 0.0001, "dropout": 0.02},
+    "harsh":     {"sub": 0.02,  "ins": 0.0003, "del": 0.0003, "dropout": 0.10},
 }
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
