@@ -1,6 +1,5 @@
 import type { ReactNode } from "react"
 
-import { cn } from "@/lib/utils"
 import {
   Table,
   TableBody,
@@ -10,18 +9,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-export interface MetricRow {
+interface MetricRow {
   label: string
   value: ReactNode
-  tone?: "ink" | "verified" | "damaged" | "muted"
 }
-
-const TONE_CLASS = {
-  ink: "text-ink",
-  verified: "text-verified",
-  damaged: "text-damaged",
-  muted: "text-ink-muted",
-} as const
 
 export function MetricsTable({
   rows,
@@ -45,12 +36,7 @@ export function MetricsTable({
               <TableCell className="px-2 py-2 text-[12px] text-ink-muted">
                 {row.label}
               </TableCell>
-              <TableCell
-                className={cn(
-                  "num px-2 py-2 text-right text-[12px]",
-                  TONE_CLASS[row.tone ?? "ink"],
-                )}
-              >
+              <TableCell className="num px-2 py-2 text-right text-[12px] text-ink">
                 {row.value}
               </TableCell>
             </TableRow>

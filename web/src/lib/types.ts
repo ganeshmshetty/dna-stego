@@ -7,11 +7,11 @@ export interface SessionStub {
   created_at: string
 }
 
-export interface CoverSelection {
+interface CoverSelection {
   gene_count: number
 }
 
-export interface CoverInfo {
+interface CoverInfo {
   name: string
   nt: number
   codons: number
@@ -21,20 +21,20 @@ export interface CoverInfo {
   protein_preview: string
 }
 
-export interface MessageInfo {
+interface MessageInfo {
   name: string
   size: number
   sha256: string
   preview: string
 }
 
-export interface CodonChange {
+interface CodonChange {
   codon_index: number
   cover: string
   stego: string
 }
 
-export interface StegoInfo {
+interface StegoInfo {
   sequence: string
   preview: string
   protein_identical: boolean
@@ -46,7 +46,7 @@ export interface StegoInfo {
   diff: CodonChange[]
 }
 
-export interface ChannelInfo {
+interface ChannelInfo {
   coverage: number
   sub_rate: number
   seed: number
@@ -57,7 +57,7 @@ export interface ChannelInfo {
   consensus_errors: number
 }
 
-export interface RecoveryInfo {
+interface RecoveryInfo {
   ok: boolean
   sha256: string | null
   length: number | null
@@ -68,7 +68,7 @@ export interface RecoveryInfo {
   matches_original: boolean
 }
 
-export interface DetectionInfo {
+interface DetectionInfo {
   auc: number
   tpr_at_1pct: number
   n_natural: number
@@ -78,7 +78,7 @@ export interface DetectionInfo {
   coder: Coder
 }
 
-export interface CheckFlags {
+interface CheckFlags {
   translatable: boolean
   stop_ok: boolean
   ecc: boolean
@@ -87,7 +87,7 @@ export interface CheckFlags {
   sha: boolean
 }
 
-export interface CheckDamage {
+interface CheckDamage {
   coverage: number
   sub_rate: number
   consensus_errors: number

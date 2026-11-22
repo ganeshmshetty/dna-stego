@@ -16,16 +16,6 @@ export function fmtPct(fraction: number, places = 2): string {
   return `${(fraction * 100).toFixed(places)}%`
 }
 
-export function fmtRate(value: number | null): string {
-  return value === null ? "—" : value.toFixed(4)
-}
-
-export function fmtP(value: number): string {
-  if (value === 0) return "0"
-  if (value < 0.0001) return "<0.0001"
-  return value.toFixed(4)
-}
-
 export function fmtFixed(value: number, places = 3): string {
   return value.toFixed(places)
 }

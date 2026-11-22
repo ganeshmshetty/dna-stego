@@ -136,15 +136,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .rule-top {
-    border-top: 1px solid var(--rule);
-  }
-
-  .rule-bottom {
-    border-bottom: 1px solid var(--rule);
-  }
-
-  /* Base colours are used only in sequences and the helix. */
+  /* Base colours are used only in sequences. */
   .base-A {
     color: var(--base-a);
   }
@@ -157,20 +149,10 @@
   .base-C {
     color: var(--base-c);
   }
-
-  /* A changed base reads as damage; nothing else uses this fill. */
-  .diff-changed {
-    background: color-mix(in srgb, var(--damaged) 14%, transparent);
-    color: var(--damaged);
-  }
-
-  .diff-gap {
-    color: var(--ink-muted);
-  }
 }
 
 /* One focus treatment everywhere, in ink. Beats component ring utilities. */
-:where(a, button, input, textarea, [role="slider"], [role="tab"], [tabindex]):focus-visible {
+:where(a, button, input, textarea, [role="slider"], [tabindex]):focus-visible {
   outline: 1px solid var(--ink);
   outline-offset: 2px;
   box-shadow: none;
@@ -200,23 +182,6 @@
 [data-slot="slider-thumb"]:focus-visible {
   outline: 1px solid var(--ink);
   outline-offset: 2px;
-}
-
-/* No shadows anywhere. */
-[data-slot="select-content"],
-[data-slot="tooltip-content"],
-[data-slot="tabs-trigger"] {
-  box-shadow: none !important;
-}
-
-[data-slot="select-content"] {
-  border: 1px solid var(--rule);
-  border-radius: 0 !important;
-  animation: none !important;
-}
-
-[data-slot="select-item"] {
-  border-radius: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

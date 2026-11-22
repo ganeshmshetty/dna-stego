@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 
 import { cn } from "@/lib/utils"
 
-export interface VerdictRow {
+interface VerdictRow {
   label: string
   value: ReactNode
   tone?: "ink" | "verified" | "damaged" | "muted"
@@ -15,7 +15,6 @@ interface VerdictBlockProps {
   rows?: VerdictRow[]
   children?: ReactNode
   note?: ReactNode
-  className?: string
 }
 
 const TONE_CLASS = {
@@ -32,10 +31,9 @@ export function VerdictBlock({
   rows,
   children,
   note,
-  className,
 }: VerdictBlockProps) {
   return (
-    <div role="status" aria-live="polite" className={cn("border border-rule", className)}>
+    <div role="status" aria-live="polite" className="border border-rule">
       <div className="flex items-baseline justify-between gap-4 px-4 pt-3 pb-2">
         <span className="label">Verdict</span>
         {aside ? <span className="label">{aside}</span> : null}
