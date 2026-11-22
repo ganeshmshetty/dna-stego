@@ -145,7 +145,8 @@ Every page reads and mutates one JSON document. This is the spine of the app.
   "params": {
     "strand_length": 200,
     "ecc": { "scheme": "rs", "n": 50, "k": 34 },
-    "scramble_seed": 8412,
+    "scramble_seed": 167,
+    "scramble": "fixed, key-independent",
     "watermark": { "mode": "reserved", "field_nt": 16, "bits": 32 },
     "payload_bytes_per_strand": 26
   },
@@ -184,14 +185,23 @@ Rules:
 2. Split into payload blocks sized by watermark mode: 30 bytes unmarked, 26 bytes reserved.
 3. Build a 34-byte data block. Two layouts, selected by watermark mode:
 
-   - `none`:     `[strand_index:2][scramble_seed:1][crc8:1][payload:30]`
-   - `reserved`: `[strand_index:2][scramble_seed:1][crc8:1][mark:4][payload:26]`
+   - `none`:     `[strand_index:2][valid_len:1][crc8:1][payload:30]`
+   - `reserved`: `[strand_index:2][valid_len:1][crc8:1][mark:4][payload:26]`
+
+   `valid_len` records how many payload bytes are meaningful in the final, padded block.
 4. Reed–Solomon encode `RS(50, 34)` over GF(256) → 50-byte codeword.
 5. Map to 200 nt: 2 bits per base, most-significant first.
-6. Scramble: `base[i] = ROT4[(symbol[i] + s[i]) mod 4]`, where `s` is a deterministic
-   pseudo-random stream seeded by `scramble_seed`. This is a bijection, so decoding is
-   exact, while breaking up payload-correlated runs and balancing GC statistically.
-7. Record `gc` and `max_homopolymer` per strand. Do **not** silently repair; report.
+6. Scramble: `symbol[i] = (symbol[i] + s[i]) mod 4`, where `s` is a deterministic
+   pseudo-random stream from a fixed global seed. This is a bijection, so decoding is exact,
+   while breaking up payload-correlated runs and balancing GC statistically.
+7. Permute: `out[PERMUTATION[i]] = symbol[i]` with a fixed, key-independent permutation.
+   This spreads the mark symbols across the whole strand instead of leaving them in a
+   contiguous block.
+8. Map each symbol to a base.
+9. Record `gc` and `max_homopolymer` per strand. Do **not** silently repair; report.
+
+The scrambler and permutation are both key-independent, so a decoder needs no side
+information beyond the strand itself. Nothing in the encoder depends on a secret.
 
 **Decode**
 
@@ -229,8 +239,11 @@ Symmetric, per-nucleotide, order fixed as: substitution → insertion → deleti
   rather than placed in a header block, so deletion of a prefix does not erase it.
 - Field value = `PRF(key, strand_index, position_block)` truncated to the field length.
 - Detection: recompute the PRF, count matching symbols, run a binomial test against the
-  null (chance agreement = 1/4 per symbol). Sixteen symbols per strand is weak evidence on
-  its own, so the verdict aggregates over the strand set (see §7.5).
+  null (chance agreement = 1/2 per bit). Sixteen symbols per strand is weak evidence on its
+  own, so the verdict aggregates over the strand set (see §7.5).
+- **v0 requires an intact RS codeword.** It tolerates substitutions (up to 8 corrupted bytes
+  per strand) but not indels or prefix truncation. That limitation is measured and reported
+  honestly; it is the main motivation for v1, whose detector is position-independent.
 - Reported cost: `32 bits / 200 nt = 0.16 bits/nt`. That is 8% of the strand length and
   13% of unmarked payload capacity (1.20 → 1.04 bits/nt). The number is measured, not
   asserted.
@@ -278,9 +291,12 @@ Input: `sequence`, `key`, optional `recipient`.
 5. Return `detected`, `recipient`, `p_value`, `score`, `null_mean = 0.5`,
    `windows_searched`.
 
-**Calibration gate:** on 1,000 held-out natural *E. coli* windows with random keys, the
-empirical false-positive rate at `alpha = 0.01` must be ≤ 1.5%. If it is not, the detector
-is not shippable.
+**Calibration gate (v0).** Because the verifier can only score strands that RS-decode,
+natural DNA yields `n = 0` and is never flagged; that null is trivial. The meaningful null is
+a **wrong key**: on 1,000 unmarked strand sets encoded under one key and tested with another,
+the empirical false-positive rate at `alpha = 0.01` must be ≤ 1.5%. If it is not, the
+detector is not shippable. For v1 the null additionally includes natural *E. coli* windows,
+because its detector does not require a codeword.
 
 ### 7.6 Steganalysis attacker
 
@@ -343,7 +359,7 @@ matched to deletion, dropout `{0, 10, 30}%`, 5 seeds each.
 | Effective density | payload bits / total nt | reported, with and without mark |
 | Mark cost | bytes/nt consumed by the mark | reported, measured |
 | Verifier TPR | True positive rate at FPR = 1% | > 0.99 at Clean |
-| Verifier FPR | Empirical, on 1,000 natural windows | ≤ 1.5% |
+| Verifier FPR | Empirical, wrong-key null | ≤ 1.5% |
 | Steganalysis AUC | Natural vs generated | ≈ 0.5 for v1 (goal) |
 | Recipient ID accuracy | Correct recipient chosen | > 0.99 |
 | Constraint health | GC mean/spread, max homopolymer, k-mer distance | reported |
@@ -437,9 +453,9 @@ No page may display a metric it did not compute in the current run.
   clean channel. Golden file for a fixed payload and seed.
 - **Channel:** statistical test — realised rates within 10% of requested rates over 1e6
   nucleotides; determinism test for a fixed seed.
-- **Watermark:** a set of 41 clean marked strands must give `p < 1e-9`; single unmarked
-  strands with the correct key must not be flagged at `alpha = 0.01`; over 1,000 unmarked
-  strands the p-values must be uniform (KS test against U(0,1)).
+- **Watermark:** a set of 41 clean marked strands must give `p < 1e-9`; strands marked for
+  one recipient must not be flagged under another recipient's key at `alpha = 0.01`; over
+  1,000 wrong-key trials the p-values must be uniform (KS test against U(0,1)).
 - **Verifier calibration:** the §7.5 false-positive gate runs as a test, not a manual check.
 - **API:** every endpoint has a happy-path and one bad-input test.
 - **Frontend:** Vitest for formatting and stale-state logic. Playwright for the five-page
