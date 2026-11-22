@@ -239,8 +239,10 @@ Symmetric, per-nucleotide, order fixed as: substitution → insertion → deleti
   rather than placed in a header block, so deletion of a prefix does not erase it.
 - Field value = `PRF(key, strand_index, position_block)` truncated to the field length.
 - Detection: recompute the PRF, count matching symbols, run a binomial test against the
-  null (chance agreement = 1/2 per bit). Sixteen symbols per strand is weak evidence on its
-  own, so the verdict aggregates over the strand set (see §7.5).
+  null (chance agreement = 1/2 per bit). A perfectly matching 32-bit mark is already strong
+  evidence on its own (p ≈ 2e-10); pooling across strands is what keeps detection stable
+  under damage and keeps the false-positive rate calibrated. The verdict aggregates over
+  the strand set (see §7.5).
 - **v0 requires an intact RS codeword.** It tolerates substitutions (up to 8 corrupted bytes
   per strand) but not indels or prefix truncation. That limitation is measured and reported
   honestly; it is the main motivation for v1, whose detector is position-independent.
