@@ -1,7 +1,6 @@
 import { useEffect } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 
-import { Footer } from "@/components/layout/Footer"
 import { StaleNotice } from "@/components/layout/StaleNotice"
 import { TopBar } from "@/components/layout/TopBar"
 import { SessionProvider } from "@/lib/session"
@@ -38,7 +37,6 @@ export default function App() {
               <Route path="*" element={<Navigate to="/embed" replace />} />
             </Routes>
           </div>
-          <Footer />
         </div>
       </BrowserRouter>
     </SessionProvider>

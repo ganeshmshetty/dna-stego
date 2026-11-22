@@ -1,7 +1,6 @@
-import { Fragment } from "react"
-import { Link, NavLink } from "react-router-dom"
+import { Fragment, useEffect } from "react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 
-import { useSession } from "@/lib/session"
 import { cn } from "@/lib/utils"
 
 const STEPS = [
@@ -13,83 +12,88 @@ const STEPS = [
 ] as const
 
 export function TopBar() {
-  const { artifact } = useSession()
-  const chain = [
-    { label: "cover", done: Boolean(artifact?.cover) },
-    { label: "message", done: Boolean(artifact?.message) },
-    { label: "stego", done: Boolean(artifact?.stego) },
-    { label: "channel", done: Boolean(artifact?.channel) },
-    { label: "recovery", done: Boolean(artifact?.recovery) },
-  ]
-  const status = chain
-    .map((entry) => `${entry.label} ${entry.done ? "✓" : "—"}`)
-    .join(" · ")
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function isEditable(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false
+      const tag = target.tagName
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      )
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.repeat || event.shiftKey || event.isComposing) return
+      if (event.metaKey || event.ctrlKey) return
+
+      const alt = event.altKey
+      let digit: string | null = /^[1-5]$/.test(event.key) ? event.key : null
+
+      // macOS Option+digit reports a transformed event.key (e.g. "¡" for
+      // Option+1), so fall back to the physical number-row key for Alt.
+      if (!digit && alt) {
+        const codeMatch = /^(?:Digit|Numpad)([1-5])$/.exec(event.code)
+        digit = codeMatch ? codeMatch[1] : null
+      }
+
+      if (!digit) return
+      if (!alt && isEditable(event.target)) return
+
+      const target = STEPS[Number(digit) - 1]
+      if (!target) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      navigate(target.to)
+    }
+
+    window.addEventListener("keydown", onKeyDown, { capture: true })
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true })
+    }
+  }, [navigate])
 
   return (
-    <header className="border-b border-rule bg-paper">
-      <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        <Link
-          to="/embed"
-          className="text-[15px] leading-none font-semibold tracking-[-0.015em] text-ink"
-        >
-          TraceDNA
-        </Link>
-
-        <nav aria-label="Pipeline" className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          {STEPS.map((step, index) => (
-            <Fragment key={step.to}>
-              {index > 0 ? (
-                <span aria-hidden="true" className="text-[10px] text-ink-muted">
-                  ·
-                </span>
-              ) : null}
-              <NavLink
-                to={step.to}
-                className={({ isActive }) =>
-                  cn(
-                    "inline-flex items-baseline gap-1 border-b py-0.5 text-[12.5px] leading-none transition-colors",
-                    isActive
-                      ? "border-ink text-ink"
-                      : "border-transparent text-ink-muted hover:border-rule hover:text-ink",
-                  )
-                }
-              >
-                <span className="num text-[9.5px] text-ink-muted">{step.number}</span>
-                <span>{step.label}</span>
-              </NavLink>
-            </Fragment>
-          ))}
-        </nav>
-
-        <div
-          role="status"
-          aria-live="polite"
-          title={status}
-          className="num ml-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[10.5px] leading-none text-ink-muted"
-        >
-          <span className="sr-only">
-            Pipeline status:{" "}
-            {chain
-              .map((entry) => `${entry.label} ${entry.done ? "done" : "not done"}`)
-              .join("; ")}
-            .
-          </span>
-          <span aria-hidden="true" className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-            {chain.map((entry, index) => (
-              <Fragment key={entry.label}>
+    <header className="sticky top-0 z-30 border-b border-rule bg-paper">
+      <div className="mx-auto flex h-[55px] w-full max-w-[1120px] items-stretch justify-center px-4 sm:px-6">
+        <nav aria-label="Steps" className="flex items-stretch justify-center">
+          {STEPS.map((step, index) => {
+            const active = pathname === step.to
+            return (
+              <Fragment key={step.to}>
                 {index > 0 ? (
-                  <span className="text-ink-muted">·</span>
+                  <span aria-hidden="true" className="h-3 w-px self-center bg-rule" />
                 ) : null}
-                <span className={entry.done ? "text-ink" : "text-ink-muted"}>
-                  {entry.label}{" "}
-                  <span className={entry.done ? "text-verified" : "text-ink-muted"}>
-                    {entry.done ? "✓" : "—"}
+                <Link
+                  to={step.to}
+                  aria-current={active ? "step" : undefined}
+                  aria-keyshortcuts={`Alt+${step.number}`}
+                  className={cn(
+                    "relative inline-flex items-center gap-1 px-1.5 text-[11px] leading-none transition-colors sm:gap-1.5 sm:px-4 sm:text-[12.5px]",
+                    "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-ink",
+                    active ? "text-ink" : "text-ink-muted hover:text-ink",
+                  )}
+                >
+                  <span className="num text-[8.5px] leading-none sm:text-[10px]">
+                    {step.number}
                   </span>
-                </span>
+                  <span className="font-normal">{step.label}</span>
+                  {active ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-0 -bottom-px h-px bg-ink"
+                    />
+                  ) : null}
+                </Link>
               </Fragment>
-            ))}
-          </span>
-        </div>
+            )
+          })}
+        </nav>
       </div>
     </header>
   )
