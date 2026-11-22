@@ -445,8 +445,9 @@ command to produce one. No fabricated numbers, ever.
 - Render a **20–30 base window**, not 200 nt. Instanced meshes.
 - `autoRotate={false}` by default. Light background. No bloom, no glow, no starfield.
 - Driven by our data: highlight mark positions and damaged bases via `selectedIndex`.
-- Uses the `organui` DnaHelix component, vendored into `src/components/` (licence checked at
-  vendoring time). Fallback: `threecn` DnaHelix, or a ~200-line hand-rolled helix.
+- Hand-rolled in `src/components/dna/HelixPanel.tsx` with instanced meshes. The vendored
+  registry components were not used, which removes the third-party licence question
+  entirely. One toolbar control: reset view.
 
 ---
 
@@ -528,7 +529,7 @@ v0 through M3 is the guaranteed shippable path. M5 may fail; the project does no
 | recharts | 3.7.x | If charts blank: delete lockfile + `node_modules`, reinstall |
 | three | ≥ 0.180, pinned | |
 | `@react-three/fiber` | **≥ 9.8.2** | 9.8.0 added React 19.3 support; 9.7.0 breaks on 19.3 |
-| `@react-three/drei` | matching 9.x | |
+| `@react-three/drei` | 10.x | drei 10 peers with R3F 9 / React 19; drei 9 peers with R3F 8 |
 | `react-router-dom` | 7.x | |
 | `@fontsource/ibm-plex-sans`, `@fontsource/ibm-plex-mono` | latest | Offline fonts |
 

@@ -128,7 +128,7 @@ def create_session() -> dict[str, Any]:
         },
         "strands": [],
         "stats": {},
-        "channel": {"sub": 0.0, "ins": 0.0, "delete": 0.0, "dropout": 0.0, "seed": 1, "applied": False},
+        "channel": {"sub": 0.0, "ins": 0.0, "del": 0.0, "dropout": 0.0, "seed": 1, "applied": False},
         "recovery": None,
         "verification": None,
         "stale": [],
@@ -190,20 +190,32 @@ def encode_session(session_id: str, body: EncodeRequest | None = None) -> dict[s
         )
 
     result = encode(data, derive_key(recipient), recipient, params)
+    from ..codec.primitives import block_from_strand, unpack_data_block
+    from ..config import MARK_SYMBOL_POSITIONS
+
+    strand_rows = []
+    for strand in result.strands:
+        block = block_from_strand(strand.seq)
+        unpacked = unpack_data_block(block, params.mark_bytes) if block is not None else None
+        strand_rows.append(
+            {
+                "index": strand.index,
+                "seq": strand.seq,
+                "payload_bytes": (
+                    unpacked[1] if unpacked is not None else params.payload_bytes_per_strand
+                ),
+                "gc": round(sum(base in "GC" for base in strand.seq) / len(strand.seq), 4),
+                "max_homopolymer": _max_run(strand.seq),
+                "marked": mode == "reserved",
+                "mark_positions": list(MARK_SYMBOL_POSITIONS),
+            }
+        )
+
     artifact["recipient"] = recipient
     artifact["key_id"] = recipient
     artifact["params"]["watermark"]["mode"] = mode
     artifact["params"]["payload_bytes_per_strand"] = params.payload_bytes_per_strand
-    artifact["strands"] = [
-        {
-            "index": strand.index,
-            "seq": strand.seq,
-            "gc": round(sum(base in "GC" for base in strand.seq) / len(strand.seq), 4),
-            "max_homopolymer": _max_run(strand.seq),
-            "marked": mode == "reserved",
-        }
-        for strand in result.strands
-    ]
+    artifact["strands"] = strand_rows
     artifact["stats"] = {
         "strand_count": len(result.strands),
         "nt_total": result.nt_total,
@@ -217,11 +229,7 @@ def encode_session(session_id: str, body: EncodeRequest | None = None) -> dict[s
     artifact["channel"]["applied"] = False
     store.save(session_id, artifact)
 
-    return {
-        "stats": artifact["stats"],
-        "preview": artifact["strands"][:3],
-        "params": artifact["params"],
-    }
+    return artifact
 
 
 @app.post("/api/session/{session_id}/channel")
@@ -241,7 +249,7 @@ def apply_channel(session_id: str, body: ChannelRequest) -> dict[str, Any]:
     artifact["channel"] = {
         "sub": body.sub,
         "ins": body.ins,
-        "delete": body.delete,
+        "del": body.delete,
         "dropout": body.dropout,
         "seed": body.seed,
         "applied": True,
@@ -256,7 +264,7 @@ def apply_channel(session_id: str, body: ChannelRequest) -> dict[str, Any]:
     _clear(artifact, "recovery", "verification")
     store.save(session_id, artifact)
 
-    return {"channel": artifact["channel"], "summary": artifact["channel_stats"], "preview": _diff_preview(artifact, result.strands)}
+    return artifact
 
 
 @app.post("/api/session/{session_id}/recover")
@@ -275,16 +283,18 @@ def recover_session(session_id: str) -> dict[str, Any]:
         "ok": result.ok,
         "bytes_recovered": result.bytes_recovered,
         "expected_bytes": len(reference),
+        "recovered_sha256": result.sha256,
         "sha256": result.sha256,
         "ber_pre_ecc": result.ber_pre_ecc,
         "ber_post_ecc": result.ber_post_ecc,
-        "strands_in": artifact["channel_stats"]["strands_out"],
+        "strands_in": artifact.get("stats", {}).get("strand_count", 0),
+        "strands_out": artifact.get("channel_stats", {}).get("strands_out", 0),
         "strands_used": result.strands_used,
         "strands_failed": result.strands_failed,
         "blocks_reconstructed": result.blocks_reconstructed,
     }
     store.save(session_id, artifact)
-    return artifact["recovery"]
+    return artifact
 
 
 @app.post("/api/session/{session_id}/verify")
@@ -311,6 +321,7 @@ def verify(session_id: str, body: VerifyRequest) -> dict[str, Any]:
         "p_value": result.p_value,
         "score": round(result.score, 4),
         "null_mean": result.null_mean,
+        "windows": result.windows_searched,
         "windows_searched": result.windows_searched,
         "strands_scored": result.strands_scored,
         "alpha": ALPHA,

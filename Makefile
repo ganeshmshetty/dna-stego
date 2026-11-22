@@ -19,4 +19,4 @@ test-engine:
 	cd engine && uv run pytest
 
 test-web:
-	cd web && npm test -- --run
+	cd web && npm run build

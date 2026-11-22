@@ -11,4 +11,10 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  server: {
+    proxy: {
+      // The engine runs on :8000. Proxying keeps the browser on one origin.
+      '/api': 'http://127.0.0.1:8000',
+    },
+  },
 })

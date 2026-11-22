@@ -119,11 +119,13 @@ def test_end_to_end_roundtrip_and_verify(client, session_id) -> None:
         json={"sub": 0.0, "ins": 0.0, "delete": 0.0, "dropout": 0.0, "seed": 1},
     ).status_code == 200
 
-    recovered = client.post(f"/api/session/{session_id}/recover").json()
+    recovered = client.post(f"/api/session/{session_id}/recover").json()["recovery"]
     assert recovered["ok"] is True
-    assert recovered["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert recovered["recovered_sha256"] == hashlib.sha256(payload).hexdigest()
+    assert recovered["strands_in"] >= recovered["strands_out"] > 0
 
     artifact = client.get(f"/api/session/{session_id}").json()
+    assert len(artifact["strands"][0]["mark_positions"]) == 16
     seq = artifact["strands"][0]["seq"]
 
     good = client.post(

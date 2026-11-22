@@ -31,6 +31,9 @@ make setup          # uv sync (engine) + npm install (web)
 make dev            # API on :8000, web on :5173
 ```
 
+Vite proxies `/api` to `127.0.0.1:8000`, so the browser only talks to `:5173` and there is
+no CORS surface. Open <http://localhost:5173/encode>.
+
 or separately:
 
 ```sh

@@ -1,32 +1,60 @@
-# React + TypeScript + Vite
+# TraceDNA — web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Local-only frontend for the TraceDNA prototype. Simulated channel; no DNA was
+synthesised or sequenced.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Open the printed local URL. The app is a single-page walkthrough:
+
+1. `/encode` — file to 200 nt strands with a reserved keyed mark.
+2. `/channel` — substitution / insertion / deletion / dropout, with presets.
+3. `/recover` — decode, SHA-256 comparison, pre/post-ECC BER.
+4. `/verify` — sequence + key to a statistical verdict.
+5. `/results` — saved evaluation table and sweeps, or an explicit empty state.
+
+## Mock API
+
+`src/lib/api.ts` is the only API surface. It currently delegates to the
+deterministic generator in `src/lib/mock.ts`; there is no network call.
+
+```
+createSession()
+encodeFile(file, recipient)
+applyChannel(params)
+recover()
+verifySequence(seq, keyId)
+getResults()
+```
+
+Replace the bodies with `fetch()` calls; the signatures and the artifact shapes
+in `src/lib/types.ts` are the contract. `getResults()` intentionally returns
+"no run" until `data/eval/results.json` exists — it never invents metrics.
+
+## Stack notes
+
+- Vite 8, React 19.3.1 (exact; R3F's peer range is `<19.4`), TypeScript 6.
+- Tailwind CSS v4 via `@tailwindcss/vite`; one `@import "tailwindcss";`, no
+  PostCSS or `tailwind.config.js`.
+- `@/*` maps to `src/*` in both `vite.config.ts` and `tsconfig.app.json`
+  (`paths` only; TS 6 rejects `baseUrl`).
+- Fonts are bundled with `@fontsource/*` (Latin subsets), so the app is offline
+  after `npm install`.
+- Helix: hand-rolled R3F scene with instanced meshes, 24 bp, static by default.
+
+## Build
+
+```sh
+npm run build
+```
+
+The evaluation table is produced by the sweep, not by this app:
+
+```sh
+cd engine && uv run python -m tracedna.eval.sweep
+```
