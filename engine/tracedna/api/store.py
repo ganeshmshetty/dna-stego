@@ -66,3 +66,15 @@ def write_payload(session_id: str, data: bytes) -> None:
 
 def read_payload(session_id: str) -> bytes:
     return payload_path(session_id).read_bytes()
+
+
+def write_consensus(session_id: str, sequence: str) -> None:
+    path = session_dir(session_id) / "consensus.txt"
+    path.write_text(sequence)
+
+
+def read_consensus(session_id: str) -> str:
+    path = session_dir(session_id) / "consensus.txt"
+    if not path.exists():
+        raise FileNotFoundError("consensus")
+    return path.read_text().strip()

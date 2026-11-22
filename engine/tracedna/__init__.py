@@ -1,3 +1,3 @@
-"""TraceDNA engine: DNA storage codec, channel, watermark, and verifier."""
+"""TraceDNA: codon-level DNA steganography on real E. coli coding sequences."""
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"

@@ -1,47 +1,52 @@
-"""FastAPI application for the TraceDNA demo.
+"""FastAPI application: codon-level DNA steganography.
 
-Run locally:  cd engine && uv run uvicorn tracedna.api.main:app --reload --port 8000
+Run: cd engine && uv run uvicorn tracedna.api.main:app --reload --port 8000
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
-import platform
-import sys
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ..config import (
-    ALPHA,
-    CHANNEL_PRESETS,
-    MAX_PASTE_NT,
-    MAX_STRANDS,
-    MAX_UPLOAD_BYTES,
-    OUTER_K,
-    OUTER_R,
-    STRAND_LENGTH,
-)
-from ..types import ChannelParams, CodecParams, Strand
+from ..attack.codon import DetectionResult
+from ..attack import codon as detector
+from ..channel.reads import sequence as sequence_reads
+from ..genetics.code import split_codons
+from ..genetics.corpus import Gene, build_cover, codon_usage, load_corpus
+from ..genetics.stego import Coder, embed, extract
+from ..keys import derive_key
 from . import store
-from .models import ChannelRequest, EncodeRequest, VerifyRequest
+from .models import ChannelRequest, CoverRequest, DetectRequest, MessageRequest
 
-app = FastAPI(title="TraceDNA", version="0.1.0")
-
+app = FastAPI(title="TraceDNA", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+MAX_MESSAGE = 1_500_000
+_CACHE: dict[str, Any] = {}
 
-# --- helpers ---------------------------------------------------------------
+
+def _corpus() -> list[Gene]:
+    if "genes" not in _CACHE:
+        _CACHE["genes"] = load_corpus()
+        _CACHE["usage"] = codon_usage(_CACHE["genes"])
+    return _CACHE["genes"]
+
+
+def _usage() -> dict[str, dict[str, float]]:
+    _corpus()
+    return _CACHE["usage"]
+
+
 def _error(status: int, code: str, message: str, hint: str | None = None) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": {"code": code, "message": message, "hint": hint}})
 
@@ -57,337 +62,246 @@ def _require(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": f"no session {session_id}"})
 
 
+def _save(artifact: dict[str, Any]) -> dict[str, Any]:
+    store.save(artifact["session_id"], artifact)
+    return artifact
+
+
 def _invalidate(artifact: dict[str, Any], *fields: str) -> None:
-    stale = set(artifact.get("stale", []))
-    stale.update(fields)
-    artifact["stale"] = sorted(stale)
+    artifact["stale"] = sorted(set(artifact.get("stale", [])) | set(fields))
 
 
-def _clear(artifact: dict[str, Any], *fields: str) -> None:
-    for field_name in fields:
-        artifact.pop(field_name, None)
-    stale = set(artifact.get("stale", []))
-    stale.difference_update(fields)
-    artifact["stale"] = sorted(stale)
+def _drop(artifact: dict[str, Any], *fields: str) -> None:
+    for name in fields:
+        artifact.pop(name, None)
+    artifact["stale"] = sorted(set(artifact.get("stale", [])) - set(fields))
 
 
-def _codec():
-    """Lazy import so /health works before the codec modules exist."""
-    from ..codec import decode, encode
-
-    return encode, decode
+def _cover(artifact: dict[str, Any]) -> Gene:
+    artifact.setdefault("cover_selection", {"gene_count": 8})
+    return build_cover(_corpus(), int(artifact["cover_selection"]["gene_count"]))
 
 
-def _verify():
-    from ..verify import verify_strands
+def _diff(cover: Gene, stego: str, limit: int = 48) -> list[dict[str, Any]]:
+    a = split_codons(cover.nucleotide)
+    b = split_codons(stego)
+    rows = []
+    for i, (left, right) in enumerate(zip(a, b)):
+        if left != right:
+            rows.append({"codon_index": i, "cover": left, "stego": right})
+        if len(rows) >= limit:
+            break
+    return rows
 
-    return verify_strands
 
-
-# --- lifecycle -------------------------------------------------------------
+# --- routes ----------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    status: dict[str, Any] = {
+    genes = _corpus()
+    return {
         "ok": True,
-        "python": sys.version.split()[0],
-        "platform": platform.system(),
-        "alpha": ALPHA,
-        "strand_length": STRAND_LENGTH,
-        "presets": sorted(CHANNEL_PRESETS),
+        "genes": len(genes),
+        "longest_nt": len(genes[0].nucleotide),
+        "coders": ["uniform", "usage"],
+        "message_limit": MAX_MESSAGE,
     }
-    try:
-        _codec()
-        status["codec"] = "ok"
-    except Exception as exc:  # noqa: BLE001 - health must never raise
-        status["codec"] = f"missing: {exc.__class__.__name__}"
-        status["ok"] = False
-    try:
-        _verify()
-        status["verifier"] = "ok"
-    except Exception as exc:  # noqa: BLE001
-        status["verifier"] = f"missing: {exc.__class__.__name__}"
-        status["ok"] = False
-    return status
+
+
+@app.get("/api/genes")
+def genes() -> dict[str, Any]:
+    corpus = _corpus()
+    return {
+        "count": len(corpus),
+        "genes": [
+            {"name": g.name, "nt": len(g.nucleotide), "codons": g.codons}
+            for g in corpus[:40]
+        ],
+    }
 
 
 @app.post("/api/session")
 def create_session() -> dict[str, Any]:
     session_id = store.new_session_id()
-    artifact: dict[str, Any] = {
+    artifact = {
         "session_id": session_id,
         "created_at": _now(),
-        "file": None,
-        "recipient": None,
-        "key_id": None,
-        "params": {
-            "strand_length": STRAND_LENGTH,
-            "ecc": {"scheme": "rs", "n": 50, "k": 34},
-            "outer": {"k": OUTER_K, "r": OUTER_R},
-            "watermark": {"mode": "reserved", "field_nt": 16, "bits": 32},
-            "payload_bytes_per_strand": 26,
-        },
-        "strands": [],
-        "stats": {},
-        "channel": {"sub": 0.0, "ins": 0.0, "del": 0.0, "dropout": 0.0, "seed": 1, "applied": False},
+        "key_id": "alice",
+        "cover_selection": {"gene_count": 8},
+        "coder": "usage",
+        "cover": None,
+        "message": None,
+        "stego": None,
+        "channel": None,
         "recovery": None,
-        "verification": None,
+        "detection": None,
         "stale": [],
     }
     store.create(session_id, artifact)
-    return artifact
+    return {"session_id": session_id, "created_at": artifact["created_at"]}
 
 
-@app.post("/api/session/{session_id}/file")
-def upload_file(
-    session_id: str,
-    file: UploadFile = File(...),
-    recipient: str = Form("alice"),
-) -> dict[str, Any]:
+@app.post("/api/session/{session_id}/cover")
+def set_cover(session_id: str, body: CoverRequest) -> dict[str, Any]:
     artifact = _require(session_id)
-    data = file.file.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
-        return _error(413, "file_too_large", f"upload exceeds {MAX_UPLOAD_BYTES} bytes", "encode a smaller file")
-    if not data:
-        return _error(400, "empty_file", "the uploaded file is empty", "choose a file with at least one byte")
+    if body.gene_count > len(_corpus()):
+        return _error(422, "not_enough_genes", "the corpus is smaller than requested")
+    artifact["cover_selection"] = {"gene_count": body.gene_count}
+    artifact["coder"] = body.coder
+    cover = build_cover(_corpus(), body.gene_count)
+    artifact["cover"] = {
+        "name": cover.name,
+        "nt": len(cover.nucleotide),
+        "codons": cover.codons,
+        "gene_count": body.gene_count,
+        "preview": cover.nucleotide[:900],
+        "protein_preview": cover.protein[:300],
+    }
+    _drop(artifact, "stego", "channel", "recovery", "detection")
+    return _save(artifact)
 
+
+@app.post("/api/session/{session_id}/message")
+def set_message_text(session_id: str, body: MessageRequest) -> dict[str, Any]:
+    artifact = _require(session_id)
+    data = body.text.encode()
+    if len(data) > MAX_MESSAGE:
+        return _error(413, "message_too_large", f"message exceeds {MAX_MESSAGE} bytes")
     store.write_payload(session_id, data)
-    artifact["file"] = {
+    artifact["message"] = {
+        "name": "typed-message.txt",
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "preview": body.text[:400],
+    }
+    _drop(artifact, "stego", "channel", "recovery")
+    return _save(artifact)
+
+
+@app.post("/api/session/{session_id}/message/upload")
+def set_message_file(session_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+    artifact = _require(session_id)
+    data = file.file.read(MAX_MESSAGE + 1)
+    if len(data) > MAX_MESSAGE:
+        return _error(413, "message_too_large", f"file exceeds {MAX_MESSAGE} bytes")
+    if not data:
+        return _error(400, "empty_file", "the file is empty")
+    store.write_payload(session_id, data)
+    artifact["message"] = {
         "name": file.filename or "payload.bin",
         "size": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),
+        "preview": data[:400].decode("utf-8", "replace"),
     }
-    artifact["recipient"] = recipient.strip().lower()
-    artifact["key_id"] = artifact["recipient"]
-    _clear(artifact, "strands", "stats", "recovery", "verification")
-    artifact["channel"]["applied"] = False
-    store.save(session_id, artifact)
-    return {"file": artifact["file"], "recipient": artifact["recipient"]}
+    _drop(artifact, "stego", "channel", "recovery")
+    return _save(artifact)
 
 
-@app.post("/api/session/{session_id}/encode")
-def encode_session(session_id: str, body: EncodeRequest | None = None) -> dict[str, Any]:
+@app.post("/api/session/{session_id}/embed")
+def do_embed(session_id: str) -> dict[str, Any]:
     artifact = _require(session_id)
+    if not artifact.get("message"):
+        return _error(409, "no_message", "add a message before embedding")
     data = store.read_payload(session_id)
-
-    encode, _decode = _codec()
-    from ..watermark.fields import derive_key
-
-    recipient = (body.recipient if body and body.recipient else artifact.get("recipient")) or "alice"
-    recipient = recipient.strip().lower()
-    mode = (body.watermark_mode if body else None) or artifact["params"]["watermark"]["mode"]
-    params = CodecParams(watermark_mode=mode)  # type: ignore[arg-type]
-    params.validate()
-
-    data_blocks = -(-len(data) // params.payload_bytes_per_strand)
-    stripes = -(-data_blocks // params.outer_k)
-    expected_strands = stripes * (params.outer_k + params.outer_r)
-    if expected_strands > MAX_STRANDS:
+    cover = _cover(artifact)
+    coder: Coder = artifact.get("coder", "usage")  # type: ignore[assignment]
+    key = derive_key(artifact.get("key_id", "alice"))
+    try:
+        result = embed(cover, data, key, _usage(), coder)
+    except ValueError as exc:
         return _error(
             422,
-            "too_many_strands",
-            f"{len(data)} bytes needs {expected_strands} strands, limit is {MAX_STRANDS}",
-            "encode a smaller file or raise MAX_STRANDS",
+            "does_not_fit",
+            str(exc),
+            "increase the cover size or shorten the message",
         )
 
-    result = encode(data, derive_key(recipient), recipient, params)
-    from ..codec.primitives import block_from_strand, unpack_data_block
-    from ..config import MARK_SYMBOL_POSITIONS
-
-    strand_rows = []
-    for strand in result.strands:
-        block = block_from_strand(strand.seq)
-        unpacked = unpack_data_block(block, params.mark_bytes) if block is not None else None
-        strand_rows.append(
-            {
-                "index": strand.index,
-                "seq": strand.seq,
-                "payload_bytes": (
-                    unpacked[1] if unpacked is not None else params.payload_bytes_per_strand
-                ),
-                "gc": round(sum(base in "GC" for base in strand.seq) / len(strand.seq), 4),
-                "max_homopolymer": _max_run(strand.seq),
-                "marked": mode == "reserved",
-                "mark_positions": list(MARK_SYMBOL_POSITIONS),
-            }
-        )
-
-    artifact["recipient"] = recipient
-    artifact["key_id"] = recipient
-    artifact["params"]["watermark"]["mode"] = mode
-    artifact["params"]["payload_bytes_per_strand"] = params.payload_bytes_per_strand
-    artifact["strands"] = strand_rows
-    artifact["stats"] = {
-        "strand_count": len(result.strands),
-        "nt_total": result.nt_total,
-        "bits_per_nt": round(result.bits_per_nt, 4),
-        "gc_mean": round(result.gc_mean, 4),
-        "gc_spread": round(result.gc_spread, 4),
-        "max_homopolymer": result.max_homopolymer,
-        "payload_bytes": result.payload_bytes,
+    artifact["stego"] = {
+        "sequence": result.sequence,
+        "preview": result.sequence[:900],
+        "protein_identical": result.protein == cover.protein,
+        "protein_preview": result.protein[:300],
+        "capacity_bytes": result.capacity_bytes,
+        "bits_per_codon": round(result.bits_per_codon, 4),
+        "codon_count": result.codon_count,
+        "changed_nt": sum(1 for a, b in zip(cover.nucleotide, result.sequence) if a != b),
+        "diff": _diff(cover, result.sequence),
     }
-    _clear(artifact, "recovery", "verification", "noisy_strands")
-    artifact["channel"]["applied"] = False
-    store.save(session_id, artifact)
-
-    return artifact
+    _drop(artifact, "channel", "recovery")
+    artifact["detection"] = None
+    return _save(artifact)
 
 
 @app.post("/api/session/{session_id}/channel")
-def apply_channel(session_id: str, body: ChannelRequest) -> dict[str, Any]:
+def do_channel(session_id: str, body: ChannelRequest) -> dict[str, Any]:
     artifact = _require(session_id)
-    if not artifact.get("strands"):
-        return _error(409, "not_encoded", "encode the file before applying a channel", "call /encode first")
-
-    from ..channel import apply as apply_noise
-
-    strands = [Strand(index=s["index"], seq=s["seq"]) for s in artifact["strands"]]
-    params = ChannelParams(sub=body.sub, ins=body.ins, delete=body.delete, dropout=body.dropout, seed=body.seed)
-    params.validate()
-    result = apply_noise(strands, params)
-
-    artifact["noisy_strands"] = [{"index": s.index, "seq": s.seq, "survived": True} for s in result.strands]
+    if not artifact.get("stego"):
+        return _error(409, "not_embedded", "embed a message first")
+    result = sequence_reads(
+        artifact["stego"]["sequence"],
+        coverage=body.coverage,
+        sub_rate=body.sub_rate,
+        seed=body.seed,
+    )
+    store.write_consensus(session_id, result.consensus)
     artifact["channel"] = {
-        "sub": body.sub,
-        "ins": body.ins,
-        "del": body.delete,
-        "dropout": body.dropout,
+        "coverage": body.coverage,
+        "sub_rate": body.sub_rate,
         "seed": body.seed,
         "applied": True,
+        "reads": result.reads,
+        "bases_read": result.bases_read,
+        "substitutions": result.substitutions,
+        "consensus_errors": result.consensus_errors,
     }
-    artifact["channel_stats"] = {
-        "strands_in": result.strands_in,
-        "strands_out": result.strands_out,
-        "nt_in": result.nt_in,
-        "nt_out": result.nt_out,
-        "events": result.events,
-    }
-    _clear(artifact, "recovery", "verification")
-    store.save(session_id, artifact)
-
-    return artifact
+    _drop(artifact, "recovery")
+    return _save(artifact)
 
 
 @app.post("/api/session/{session_id}/recover")
-def recover_session(session_id: str) -> dict[str, Any]:
+def do_recover(session_id: str) -> dict[str, Any]:
     artifact = _require(session_id)
-    noisy = artifact.get("noisy_strands")
-    if not noisy:
-        return _error(409, "no_channel", "apply a channel before decoding", "call /channel first")
-
-    _encode, decode = _codec()
-    strands = [Strand(index=s["index"], seq=s["seq"]) for s in noisy]
-    reference = store.read_payload(session_id)
-    result = decode(strands, CodecParams(watermark_mode=artifact["params"]["watermark"]["mode"]), reference)  # type: ignore[arg-type]
-
+    if not artifact.get("stego"):
+        return _error(409, "not_embedded", "embed a message first")
+    consensus = store.read_consensus(session_id) if artifact.get("channel") else artifact["stego"]["sequence"]
+    key = derive_key(artifact.get("key_id", "alice"))
+    coder: Coder = artifact.get("coder", "usage")  # type: ignore[assignment]
+    result = extract(consensus, key, _usage(), coder)
     artifact["recovery"] = {
         "ok": result.ok,
-        "bytes_recovered": result.bytes_recovered,
-        "expected_bytes": len(reference),
-        "recovered_sha256": result.sha256,
         "sha256": result.sha256,
-        "ber_pre_ecc": result.ber_pre_ecc,
-        "ber_post_ecc": result.ber_post_ecc,
-        "strands_in": artifact.get("stats", {}).get("strand_count", 0),
-        "strands_out": artifact.get("channel_stats", {}).get("strands_out", 0),
-        "strands_used": result.strands_used,
-        "strands_failed": result.strands_failed,
-        "blocks_reconstructed": result.blocks_reconstructed,
+        "length": result.length,
+        "crc_ok": result.crc_ok,
+        "error": result.error,
+        "bits_read": result.bits_read,
+        "preview": (result.message or b"")[:400].decode("utf-8", "replace"),
+        "matches_original": result.sha256 == (artifact.get("message") or {}).get("sha256"),
     }
-    store.save(session_id, artifact)
-    return artifact
+    return _save(artifact)
 
 
-@app.post("/api/session/{session_id}/verify")
-def verify(session_id: str, body: VerifyRequest) -> dict[str, Any]:
+@app.post("/api/session/{session_id}/detect")
+def do_detect(session_id: str, body: DetectRequest) -> dict[str, Any]:
     artifact = _require(session_id)
-    if len(body.sequence) > MAX_PASTE_NT:
-        return _error(413, "sequence_too_long", f"sequence exceeds {MAX_PASTE_NT} nt", "paste one or a few strands")
-
-    verify_strands = _verify()
-    from ..watermark.fields import derive_key
-
-    key_id = body.key_id.strip().lower()
-    strands = _parse_strands(body.sequence)
-    result = verify_strands(strands, derive_key(key_id)) if strands else None
-    if result is None:
-        from ..verify import verify_sequence
-
-        result = verify_sequence(body.sequence, derive_key(key_id))
-
-    verdict = {
-        "detected": result.detected,
-        "claimed_key": key_id,
-        "recipient": key_id if result.detected else None,
-        "p_value": result.p_value,
-        "score": round(result.score, 4),
-        "null_mean": result.null_mean,
-        "windows": result.windows_searched,
-        "windows_searched": result.windows_searched,
-        "strands_scored": result.strands_scored,
-        "alpha": ALPHA,
+    coder: Coder = artifact.get("coder", "usage")  # type: ignore[assignment]
+    key = derive_key(artifact.get("key_id", "alice"))
+    try:
+        result: DetectionResult = detector.evaluate(
+            _corpus(), _usage(), coder=coder, key=key, count=min(body.gene_count, len(_corpus()))
+        )
+    except ValueError as exc:
+        return _error(422, "not_enough_data", str(exc))
+    artifact["detection"] = {
+        "auc": result.auc,
+        "tpr_at_1pct": result.tpr_at_1pct,
+        "n_natural": result.n_natural,
+        "n_stego": result.n_stego,
+        "n_train": result.n_train,
+        "n_test": result.n_test,
+        "coder": result.coder,
     }
-    artifact["verification"] = verdict
-    store.save(session_id, artifact)
-    return verdict
+    return _save(artifact)
 
 
 @app.get("/api/session/{session_id}")
 def get_session(session_id: str) -> dict[str, Any]:
     return _require(session_id)
-
-
-@app.get("/api/results")
-def get_results() -> dict[str, Any]:
-    path = store.DATA_ROOT / "eval" / "results.json"
-    if not path.exists():
-        return {
-            "available": False,
-            "command": "cd engine && uv run python -m tracedna.eval.sweep",
-            "message": "No evaluation run yet. The table is generated by the sweep, never fabricated.",
-        }
-    return {"available": True, **json.loads(path.read_text())}
-
-
-# --- small helpers ---------------------------------------------------------
-def _max_run(seq: str) -> int:
-    best = run = 1
-    for i in range(1, len(seq)):
-        run = run + 1 if seq[i] == seq[i - 1] else 1
-        best = max(best, run)
-    return best
-
-
-def _parse_strands(text: str) -> list[Strand]:
-    """Accept one or more sequences separated by blank lines; ignore numbers/labels."""
-    chunks: list[str] = []
-    current: list[str] = []
-    for line in text.splitlines():
-        cleaned = "".join(ch for ch in line.upper() if ch in "ACGT")
-        if cleaned:
-            current.append(cleaned)
-        elif current:
-            chunks.append("".join(current))
-            current = []
-    if current:
-        chunks.append("".join(current))
-    strands = []
-    for i, chunk in enumerate(chunks):
-        if len(chunk) == STRAND_LENGTH:
-            strands.append(Strand(index=i, seq=chunk))
-    return strands
-
-
-def _diff_preview(artifact: dict[str, Any], noisy: list[Strand]) -> dict[str, Any] | None:
-    if not artifact["strands"] or not noisy:
-        return None
-    original = artifact["strands"][0]["seq"]
-    survivor = next((s for s in noisy if s.index == artifact["strands"][0]["index"]), None)
-    if survivor is None:
-        return {"original": original, "noisy": "", "index": artifact["strands"][0]["index"], "lost": True}
-    return {
-        "original": original,
-        "noisy": survivor.seq,
-        "index": survivor.index,
-        "length_delta": len(survivor.seq) - len(original),
-        "lost": False,
-    }

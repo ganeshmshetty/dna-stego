@@ -1,8 +1,5 @@
-"""Channel package. Owner: agent A.
+"""Simulated sequencing channel."""
 
-Public API (implemented in this package):
+from .reads import ReadResult, sequence
 
-    apply(strands: list[Strand], params: ChannelParams) -> ChannelResult
-
-The channel is deterministic given its seed.
-"""
+__all__ = ["ReadResult", "sequence"]
