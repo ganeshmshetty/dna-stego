@@ -50,6 +50,20 @@ class ExtractResult:
     bits_read: int
     error: str | None = None
     notes: dict = field(default_factory=dict)
+    checks: dict[str, bool] = field(default_factory=dict)
+
+
+def _stage_checks(**overrides: bool) -> dict[str, bool]:
+    """Every stage a sequence must clear, false unless reached."""
+    base = {
+        "translatable": False,
+        "stop_ok": False,
+        "ecc": False,
+        "marker": False,
+        "crc": False,
+    }
+    base.update(overrides)
+    return base
 
 
 # --- keyed helpers ---------------------------------------------------------
@@ -267,15 +281,24 @@ def extract(
         protein = translate(sequence)
         codons = split_codons(sequence)
     except ValueError as exc:
-        return ExtractResult(False, None, None, False, None, 0, 0, str(exc))
+        return ExtractResult(
+            ok=False, message=None, length=None, crc_ok=False, sha256=None,
+            bit_errors=0, bits_read=0, error=str(exc), checks=_stage_checks(),
+        )
 
-    if protein.endswith(STOP) and len(protein) - 1 != len(codons) - 1:
-        return ExtractResult(False, None, None, False, None, 0, 0, "unexpected stop codon")
+    checks = _stage_checks(translatable=True)
 
-    if len(protein.rstrip(STOP)) != len(codons) - (1 if protein.endswith(STOP) else 0):
-        return ExtractResult(False, None, None, False, None, 0, 0, "internal stop codon")
-
+    expected_protein_length = len(codons) - (1 if protein.endswith(STOP) else 0)
+    if len(protein.rstrip(STOP)) != expected_protein_length:
+        return ExtractResult(
+            ok=False, message=None, length=None, crc_ok=False, sha256=None,
+            bit_errors=0, bits_read=0,
+            error="internal stop codon — wrong reading frame, or not our sequence",
+            checks=checks,
+        )
+    checks["stop_ok"] = True
     protein = protein.rstrip(STOP)
+
     bits: list[int] = []
 
     if coder == "uniform":
@@ -285,7 +308,12 @@ def extract(
             if width == 0:
                 continue
             if codon not in options:
-                return ExtractResult(False, None, None, False, None, 0, 0, "non-synonymous codon")
+                return ExtractResult(
+                    ok=False, message=None, length=None, crc_ok=False, sha256=None,
+                    bit_errors=0, bits_read=len(bits),
+                    error=f"codon {codon} does not encode {aa}",
+                    checks=checks,
+                )
             value = options.index(codon)
             for shift in range(width - 1, -1, -1):
                 bits.append((value >> shift) & 1)
@@ -294,14 +322,24 @@ def extract(
         for aa, codon in zip(protein, codons):
             entry = codes[aa].get(codon)
             if entry is None:
-                return ExtractResult(False, None, None, False, None, 0, 0, "non-synonymous codon")
+                return ExtractResult(
+                    ok=False, message=None, length=None, crc_ok=False, sha256=None,
+                    bit_errors=0, bits_read=len(bits),
+                    error=f"codon {codon} does not encode {aa}",
+                    checks=checks,
+                )
             code, length = entry
             for shift in range(length - 1, -1, -1):
                 bits.append((code >> shift) & 1)
 
     capacity_bits = _capacity_bits_for(protein, coder, usage)
     if len(bits) < capacity_bits:
-        return ExtractResult(False, None, None, False, None, 0, len(bits), "not enough bits recovered")
+        return ExtractResult(
+            ok=False, message=None, length=None, crc_ok=False, sha256=None,
+            bit_errors=0, bits_read=len(bits),
+            error="not enough bits recovered (truncated or over-damaged sequence)",
+            checks=checks,
+        )
     bits = bits[:capacity_bits]
     scrambled = _scramble(bits, key)
     codeword = _bytes_from_bits(scrambled)
@@ -310,18 +348,33 @@ def extract(
         decoded, _full, _errata = RSCodec(NSYM).decode(codeword)
     except (ReedSolomonError, ValueError) as exc:
         return ExtractResult(
-            False, None, None, False, None, 0, len(bits), f"error correction failed: {exc}"
+            ok=False, message=None, length=None, crc_ok=False, sha256=None,
+            bit_errors=0, bits_read=len(bits),
+            error=f"error correction failed: {exc}", checks=checks,
         )
+    checks["ecc"] = True
 
     if len(decoded) < HEADER_BYTES or decoded[:2] != MAGIC:
-        return ExtractResult(False, None, None, False, None, 0, len(bits), "no message marker")
+        return ExtractResult(
+            ok=False, message=None, length=None, crc_ok=False, sha256=None,
+            bit_errors=0, bits_read=len(bits),
+            error="no message marker — this sequence does not carry our payload",
+            checks=checks,
+        )
+    checks["marker"] = True
+
     length = struct.unpack(">I", decoded[2:6])[0]
     crc = struct.unpack(">I", decoded[6:10])[0]
     body = bytes(decoded[10:])
     if length > len(body):
-        return ExtractResult(False, None, None, False, None, 0, len(bits), "length header is invalid")
+        return ExtractResult(
+            ok=False, message=None, length=length, crc_ok=False, sha256=None,
+            bit_errors=0, bits_read=len(bits),
+            error="length header is invalid", checks=checks,
+        )
     message = body[:length]
     crc_ok = zlib.crc32(message) == crc
+    checks["crc"] = crc_ok
     return ExtractResult(
         ok=crc_ok,
         message=message if crc_ok else None,
@@ -331,4 +384,5 @@ def extract(
         bit_errors=0,
         bits_read=len(bits),
         error=None if crc_ok else "CRC mismatch (wrong key, wrong coder, or damaged data)",
+        checks=checks,
     )

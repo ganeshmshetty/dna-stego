@@ -13,3 +13,9 @@ KEY_NAMESPACE = b"tracedna/v1/"
 
 def derive_key(passphrase: str) -> bytes:
     return hashlib.sha256(KEY_NAMESPACE + passphrase.strip().lower().encode()).digest()
+
+
+def fingerprint(key: bytes) -> str:
+    """Short, human-comparable display of a key. Never the key itself."""
+    digest = hashlib.sha256(key).hexdigest()[:16]
+    return " ".join(digest[i : i + 4] for i in range(0, 16, 4))
