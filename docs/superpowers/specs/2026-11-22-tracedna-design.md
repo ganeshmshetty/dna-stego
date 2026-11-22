@@ -541,3 +541,66 @@ The prototype is done when a person can, on one laptop with no network:
 4. Paste a strand and a key and get a p-value and a recipient name.
 5. Open Results and see a reproducible table with seeds and confidence intervals, including
    an explicit statement of what the mark cost and whether it was detectable.
+
+---
+
+## Appendix A — Design references
+
+The visual direction is "scientific instrument", not "product landing page". These are the
+sources the interface borrows from, and the specific patterns taken from each.
+
+### A.1 References
+
+| Source | What it is | Patterns to steal |
+|---|---|---|
+| **Distill.pub** — distill.pub | Interactive scientific articles | Narrow prose column (~700 px) while figures break out wider; figure captions written as *operating instructions* ("drag the slider"); one interactive control per figure; no navigation chrome inside the figure |
+| **Observable / Observable Plot** — observablehq.com | Notebook-based data apps | Thin 1 px axes, no gridlines by default, muted palette; **direct labels on lines instead of legends**; one cell = one question, one output |
+| **NCBI BLAST** — blast.ncbi.nlm.nih.gov | Sequence search results | Dense monospace alignment blocks with a thin annotation strip beneath; colour used only for semantic classes (match / mismatch / gap); numeric columns right-aligned, tabular |
+| **UCSC Genome Browser** — genome.ucsc.edu | Genome tracks | Horizontal lane metaphor: one data type per track, stacked on a shared coordinate axis; fixed-width left-hand track labels in small type |
+| **IGV.js** — igv.org | Embeddable genome viewer | Base-level colouring; hover gives the exact value instead of printing every value; toolbar reduced to a few icons |
+| **Mol\* / PDBe** — molstar.org, ebi.ac.uk/pdbe | 3D structure viewers | 3D canvas inside a **bordered, fixed-height panel**; small icon toolbar; a caption naming exactly what the model is and is not; static by default, rotation user-initiated |
+| **Benchling sequence viewer** — benchling.com | Lab sequence editor | Monospace sequence with per-base colour strip; features drawn as **slim ticks above the sequence**, never as badges or cards |
+| **cobalt.tools** — cobalt.tools | Single-purpose utility | One input, one action, one result; the result replaces the form area; almost no navigation |
+| **Excalidraw** — excalidraw.com | Canvas tool | Chrome recedes; the artifact occupies the page; a single floating toolbar |
+
+### A.2 Anti-patterns
+
+1. **Dark navy background + cyan glow + starfield + auto-rotating helix as a hero.** Seen in
+   most student "DNA visualiser" repos. It reads as a portfolio piece and signals that the
+   3D is decoration.
+2. **Gradient text, "New ✨" badges, emoji section labels.** Immediate tell of generated UI.
+3. **Card grids with drop shadows and large corner radii.** Turns a measurement into a
+   dashboard.
+4. **A hero headline plus a call-to-action** on a tool whose only real action is "encode".
+5. **Animated counters and success confetti.** Undermines the "this is a measurement"
+   framing; also a distraction in a viva.
+6. **Legends with five series and a rainbow palette.** Use direct labels; the data has at
+   most two conditions.
+
+### A.3 Visual rules to adopt
+
+1. Content max-width 1120 px; sequence and prose measure ≤ 760 px.
+2. One rule colour (`--rule`), 1 px. No shadows anywhere in the app.
+3. Colour carries meaning only: verified, damaged, and the four base colours. Everything
+   else is ink or muted ink.
+4. All numerals tabular; numeric columns right-aligned; a fixed number of decimal places per
+   column.
+5. Monospace for sequences, keys, hashes, and p-values.
+6. Section labels: 11 px mono, small caps, letter-spacing 0.06em, placed above the block.
+7. Every interactive control prints its current value beside it.
+8. Every figure carries a one-sentence caption stating what it shows and how to interact.
+9. Empty states name the exact command that fills them.
+10. At most one accent-coloured interaction per page.
+
+### A.4 The 3D panel
+
+- Fixed 280 px height, hairline border, `--paper` fill, never full-bleed, never first on the
+  page.
+- Static by default (`autoRotate={false}`); rotation only on drag. Respect
+  `prefers-reduced-motion`.
+- Caption beneath, always: *"Schematic double helix, 24 bp window. Base geometry and
+  secondary structure are not modelled."*
+- Toolbar limited to three icon buttons: reset view, toggle base labels, fit to panel.
+- Highlighting driven by `selectedIndex` from the artifact — the same indices shown in the
+  sequence track, so the two views agree.
+- Render 20–30 base pairs with instanced meshes, not the full 200 nt strand.
