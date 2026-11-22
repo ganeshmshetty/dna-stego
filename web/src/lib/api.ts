@@ -7,7 +7,14 @@
  */
 
 import { ApiError } from "./types"
-import type { Artifact, Coder, SessionStub } from "./types"
+import type {
+  Artifact,
+  CheckParams,
+  CheckResult,
+  Coder,
+  KeyFingerprint,
+  SessionStub,
+} from "./types"
 
 const DETECT_GENE_COUNT = 120
 
@@ -115,11 +122,16 @@ export function createSession(): Promise<SessionStub> {
   return ensureSession()
 }
 
-export async function setCover(geneCount: number, coder: Coder): Promise<Artifact> {
+export async function setCover(
+  geneCount: number,
+  coder: Coder,
+  passphrase: string,
+): Promise<Artifact> {
   const current = await ensureSession()
   return postJson<Artifact>(`/api/session/${current.session_id}/cover`, {
     gene_count: geneCount,
     coder,
+    passphrase,
   })
 }
 
@@ -162,6 +174,15 @@ export async function runDetector(): Promise<Artifact> {
   return postJson<Artifact>(`/api/session/${current.session_id}/detect`, {
     gene_count: DETECT_GENE_COUNT,
   })
+}
+
+export function keyFingerprint(passphrase: string): Promise<KeyFingerprint> {
+  return postJson<KeyFingerprint>("/api/key", { passphrase })
+}
+
+export async function check(params: CheckParams): Promise<CheckResult> {
+  const current = await ensureSession()
+  return postJson<CheckResult>(`/api/session/${current.session_id}/check`, params)
 }
 
 export async function getSession(): Promise<Artifact> {

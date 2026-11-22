@@ -16,6 +16,7 @@ export interface CoverInfo {
   nt: number
   codons: number
   gene_count: number
+  sequence: string
   preview: string
   protein_preview: string
 }
@@ -77,10 +78,58 @@ export interface DetectionInfo {
   coder: Coder
 }
 
+export interface CheckFlags {
+  translatable: boolean
+  stop_ok: boolean
+  ecc: boolean
+  marker: boolean
+  crc: boolean
+  sha: boolean
+}
+
+export interface CheckDamage {
+  coverage: number
+  sub_rate: number
+  consensus_errors: number
+  substitutions: number
+}
+
+export interface CheckParams {
+  sequence?: string
+  passphrase: string
+  coder?: Coder
+  damage?: {
+    coverage: number
+    sub_rate: number
+    seed: number
+  }
+}
+
+export interface CheckResult {
+  ok: boolean
+  reason: string | null
+  checks: CheckFlags
+  passphrase: string
+  fingerprint: string
+  session_fingerprint: string | null
+  crc_ok: boolean
+  length: number | null
+  preview: string
+  bits_read: number
+  coder: Coder
+  damaged: CheckDamage | null
+}
+
+export interface KeyFingerprint {
+  passphrase: string
+  fingerprint: string
+}
+
 export interface Artifact {
   session_id: string
   created_at: string
   key_id: string
+  key_fingerprint: string
   cover_selection: CoverSelection
   coder: Coder
   cover: CoverInfo | null

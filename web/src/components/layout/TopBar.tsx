@@ -5,10 +5,10 @@ import { useSession } from "@/lib/session"
 import { cn } from "@/lib/utils"
 
 const STEPS = [
-  { number: "1", label: "Cover", to: "/cover" },
-  { number: "2", label: "Embed", to: "/embed" },
-  { number: "3", label: "Damage", to: "/damage" },
-  { number: "4", label: "Recover", to: "/recover" },
+  { number: "1", label: "Embed", to: "/embed" },
+  { number: "2", label: "Damage", to: "/damage" },
+  { number: "3", label: "Recover", to: "/recover" },
+  { number: "4", label: "Verify", to: "/verify" },
   { number: "5", label: "Detect", to: "/detect" },
 ] as const
 
@@ -29,7 +29,7 @@ export function TopBar() {
     <header className="border-b border-rule bg-paper">
       <div className="mx-auto flex w-full max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
         <Link
-          to="/cover"
+          to="/embed"
           className="text-[15px] leading-none font-semibold tracking-[-0.015em] text-ink"
         >
           TraceDNA

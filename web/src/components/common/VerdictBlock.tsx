@@ -12,7 +12,8 @@ interface VerdictBlockProps {
   ok: boolean
   verdict: string
   aside?: string
-  rows: VerdictRow[]
+  rows?: VerdictRow[]
+  children?: ReactNode
   note?: ReactNode
   className?: string
 }
@@ -29,6 +30,7 @@ export function VerdictBlock({
   verdict,
   aside,
   rows,
+  children,
   note,
   className,
 }: VerdictBlockProps) {
@@ -55,27 +57,31 @@ export function VerdictBlock({
           {verdict}
         </span>
       </div>
-      <dl className="grid grid-cols-1 border-t border-rule sm:grid-cols-3">
-        {rows.map((row, index) => (
-          <div
-            key={row.label}
-            className={cn(
-              "border-b border-rule px-4 py-3 last:border-b-0 sm:border-b-0",
-              index < rows.length - 1 && "sm:border-r",
-            )}
-          >
-            <dt className="label">{row.label}</dt>
-            <dd
+      {children ? (
+        <div className="border-t border-rule">{children}</div>
+      ) : rows && rows.length > 0 ? (
+        <dl className="grid grid-cols-1 border-t border-rule sm:grid-cols-3">
+          {rows.map((row, index) => (
+            <div
+              key={row.label}
               className={cn(
-                "num mt-1 text-[13px] leading-snug break-words",
-                TONE_CLASS[row.tone ?? "ink"],
+                "border-b border-rule px-4 py-3 last:border-b-0 sm:border-b-0",
+                index < rows.length - 1 && "sm:border-r",
               )}
             >
-              {row.value}
-            </dd>
-          </div>
-        ))}
-      </dl>
+              <dt className="label">{row.label}</dt>
+              <dd
+                className={cn(
+                  "num mt-1 text-[13px] leading-snug break-words",
+                  TONE_CLASS[row.tone ?? "ink"],
+                )}
+              >
+                {row.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       {note ? (
         <p className="border-t border-rule px-4 py-2 text-[11px] leading-relaxed text-ink-muted">
           {note}

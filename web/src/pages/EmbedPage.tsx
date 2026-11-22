@@ -1,13 +1,14 @@
 import { useRef, useState } from "react"
-import { Link } from "react-router-dom"
 
-import { embedMessage, setMessageFile, setMessageText } from "@/lib/api"
+import { embedMessage, setCover, setMessageFile, setMessageText } from "@/lib/api"
 import { describeError, type ErrorDescription } from "@/lib/errors"
 import { fmtBytes, fmtFixed, fmtGenes, fmtInt } from "@/lib/format"
 import { useSession } from "@/lib/session"
+import type { Coder } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Slider } from "@/components/ui/slider"
 import {
   Table,
   TableBody,
@@ -16,15 +17,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { CoderPicker } from "@/components/common/CoderPicker"
 import { EmptyState, ErrorNote } from "@/components/common/EmptyState"
 import { FieldRow } from "@/components/common/FieldRow"
 import { Page } from "@/components/common/Page"
+import { PassphraseField } from "@/components/common/PassphraseField"
 import { SequenceTrack } from "@/components/dna/SequenceTrack"
 
 const DIFF_ROWS = 20
 
 export function EmbedPage() {
   const { artifact, setArtifact } = useSession()
+  const [geneCount, setGeneCount] = useState(artifact?.cover_selection.gene_count ?? 8)
+  const [coder, setCoder] = useState<Coder>(artifact?.coder ?? "usage")
+  const [passphrase, setPassphrase] = useState(artifact?.key_id ?? "alice")
   const [text, setText] = useState("")
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
@@ -34,13 +40,17 @@ export function EmbedPage() {
   const cover = artifact?.cover ?? null
   const message = artifact?.message ?? null
   const stego = artifact?.stego ?? null
-  const canSubmit = Boolean(cover) && !busy && (file !== null || text.trim().length > 0)
+  const coverGenes = cover ? cover.name.split("+") : []
+  const canSubmit =
+    !busy && passphrase.trim().length > 0 && (file !== null || text.trim().length > 0)
 
   async function submit() {
     if (!canSubmit) return
     setBusy(true)
     setError(null)
     try {
+      const withCover = await setCover(geneCount, coder, passphrase)
+      setArtifact(withCover)
       const withMessage = file ? await setMessageFile(file) : await setMessageText(text)
       setArtifact(withMessage)
       const next = await embedMessage()
@@ -54,9 +64,9 @@ export function EmbedPage() {
 
   return (
     <Page
-      step="Step 2 / Embed"
+      step="Step 1 / Embed"
       title="Hide the message by codon choice"
-      description="Every amino acid has several codons. The message selects among them, so the translated protein never changes. The engine reports the codon diff and the capacity it used."
+      description="Choose a real E. coli cover, set the symmetric key, then hide the message in synonymous codons. The translated protein never changes."
     >
       <div className="grid gap-8 lg:grid-cols-[340px_minmax(0,1fr)]">
         <form
@@ -68,23 +78,91 @@ export function EmbedPage() {
           aria-label="Embed a message"
         >
           <div className="flex items-baseline justify-between gap-4 border-b border-rule pb-2">
-            <span className="label">Cover</span>
+            <h2 className="label">1 · Cover and key</h2>
             <span className="num text-[10.5px] text-ink-muted">
-              {cover
-                ? `${fmtGenes(cover.gene_count)} · ${fmtInt(cover.nt)} nt`
-                : "none"}
+              {cover ? "saved" : "not saved"}
             </span>
           </div>
 
           <div className="mt-3">
             <div className="flex items-baseline justify-between gap-4">
-              <label htmlFor="message" className="label">
-                Message
-              </label>
-              <span className="num text-[10.5px] text-ink-muted">
-                {file ? "file selected" : `${text.length} chars`}
+              <span id="gene-count-label" className="label">
+                Gene count
               </span>
+              <span className="num text-[11px] text-ink">{geneCount} / 40</span>
             </div>
+            <Slider
+              aria-labelledby="gene-count-label"
+              className="mt-2.5"
+              min={1}
+              max={40}
+              step={1}
+              value={[geneCount]}
+              onValueChange={(next) => {
+                setGeneCount(next[0] ?? 1)
+                setError(null)
+              }}
+            />
+            <div className="num mt-1 flex justify-between text-[9.5px] text-ink-muted">
+              <span>1</span>
+              <span>40</span>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <CoderPicker
+              value={coder}
+              onChange={(next) => {
+                setCoder(next)
+                setError(null)
+              }}
+              name="embed-coder"
+            />
+          </div>
+
+          <div className="mt-4">
+            <PassphraseField
+              id="embed-passphrase"
+              value={passphrase}
+              onChange={(next) => {
+                setPassphrase(next)
+                setError(null)
+              }}
+            />
+          </div>
+
+          {cover ? (
+            <div className="mt-4 border-t border-rule pt-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="label">Applied cover</span>
+                <span className="num text-[10px] text-ink-muted">
+                  {fmtGenes(cover.gene_count)} · {fmtInt(cover.nt)} nt ·{" "}
+                  {fmtInt(cover.codons)} codons
+                </span>
+              </div>
+              <p className="num mt-1 text-[11px] leading-relaxed break-words text-ink">
+                {coverGenes.join(" · ")}
+              </p>
+              <div className="mt-2">
+                <p className="label">Protein preview</p>
+                <pre className="mt-0.5 max-h-[64px] overflow-auto border border-rule bg-paper p-2 font-mono text-[9.5px] leading-relaxed break-all whitespace-pre-wrap text-ink">
+                  {cover.protein_preview}
+                </pre>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex items-baseline justify-between gap-4 border-b border-rule pb-2">
+            <h2 className="label">2 · Message</h2>
+            <span className="num text-[10.5px] text-ink-muted">
+              {file ? "file selected" : `${text.length} chars`}
+            </span>
+          </div>
+
+          <div className="mt-3">
+            <label htmlFor="message" className="label">
+              Message
+            </label>
             <textarea
               id="message"
               value={text}
@@ -92,7 +170,7 @@ export function EmbedPage() {
                 setText(event.target.value)
                 setError(null)
               }}
-              disabled={!cover || file !== null}
+              disabled={file !== null}
               spellCheck={false}
               placeholder={
                 file
@@ -113,9 +191,8 @@ export function EmbedPage() {
             <div className="mt-1.5 flex items-stretch border border-dashed border-rule">
               <button
                 type="button"
-                disabled={!cover}
                 onClick={() => inputRef.current?.click()}
-                className="min-w-0 flex-1 px-3 py-2 text-left disabled:opacity-50"
+                className="min-w-0 flex-1 px-3 py-2 text-left"
               >
                 <span className="block truncate text-[12px] text-ink">
                   {file ? file.name : "Choose a file"}
@@ -141,7 +218,6 @@ export function EmbedPage() {
               ref={inputRef}
               type="file"
               tabIndex={-1}
-              disabled={!cover}
               className="sr-only"
               aria-label="Upload a message file"
               onChange={(event) => {
@@ -161,16 +237,6 @@ export function EmbedPage() {
           >
             {busy ? "Embedding…" : "Embed message"}
           </Button>
-
-          {!cover ? (
-            <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
-              Set a cover on{" "}
-              <Link to="/cover" className="text-ink underline decoration-rule underline-offset-2">
-                1 Cover
-              </Link>{" "}
-              first.
-            </p>
-          ) : null}
 
           {message && !stego ? (
             <p className="num mt-2 text-[10px] leading-relaxed text-ink-muted">
@@ -195,24 +261,22 @@ export function EmbedPage() {
             </span>
           </div>
 
-          {!cover ? (
-            <div className="mt-3">
-              <EmptyState title="Set a cover first">
-                Choose a gene cassette on{" "}
-                <Link to="/cover" className="text-ink underline decoration-rule underline-offset-2">
-                  1 Cover
-                </Link>
-                , then return here to embed a message.
-              </EmptyState>
-            </div>
-          ) : !stego ? (
+          {!stego ? (
             <div className="mt-3">
               <EmptyState
-                title={message ? "Message set, not embedded" : "No message embedded"}
+                title={
+                  cover
+                    ? message
+                      ? "Cover and key saved, message not embedded"
+                      : "Cover and key saved"
+                    : "No stego sequence yet"
+                }
               >
-                {message
-                  ? `The engine has ${message.name} (${fmtInt(message.size)} B). Press Embed message to place it; if it does not fit, shorten it or choose a larger cover.`
-                  : "Type or upload a message, then press Embed message. The protein check, capacity, changed nucleotides and codon diff appear here."}
+                {cover
+                  ? message
+                    ? `The engine has ${message.name} (${fmtInt(message.size)} B) but no stego sequence. Press Embed message to place it; if it does not fit, shorten it or choose a larger cover.`
+                    : "Add a message and press Embed message. Capacity, changed nucleotides and the codon diff appear here."
+                  : "Set the cover and key, type or upload a message, then press Embed message. The cover summary appears once saved and the stego result here."}
               </EmptyState>
             </div>
           ) : (

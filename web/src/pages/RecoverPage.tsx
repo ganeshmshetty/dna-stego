@@ -38,7 +38,7 @@ export function RecoverPage() {
 
   return (
     <Page
-      step="Step 4 / Recover"
+      step="Step 3 / Recover"
       title="Recover the hidden message"
       description="Extract the payload from the consensus sequence, check the CRC, then compare the recovered SHA-256 with the message that was embedded."
     >
@@ -83,7 +83,7 @@ export function RecoverPage() {
             <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
               Embed a message on{" "}
               <Link to="/embed" className="text-ink underline decoration-rule underline-offset-2">
-                2 Embed
+                1 Embed
               </Link>{" "}
               first.
             </p>
@@ -100,10 +100,10 @@ export function RecoverPage() {
 
           <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
             {!stego
-              ? "Recovery needs a stego sequence; embed a message on 2 Embed first."
+              ? "Recovery needs a stego sequence; embed a message on 1 Embed first."
               : channel
-                ? "Recovery reads the consensus written by Step 3. Re-run sequencing first if the channel parameters change."
-                : "No channel is applied, so recovery reads the stego sequence directly. Damage it on 3 Damage to exercise the reads."}
+                ? "Recovery reads the consensus written by Step 2. Re-run sequencing first if the channel parameters change."
+                : "No channel is applied, so recovery reads the stego sequence directly. Damage it on 2 Damage to exercise the reads."}
           </p>
 
           {error ? (
@@ -126,7 +126,7 @@ export function RecoverPage() {
               <EmptyState title="Embed a message first">
                 Recovery needs a stego sequence. Embed a message on{" "}
                 <Link to="/embed" className="text-ink underline decoration-rule underline-offset-2">
-                  2 Embed
+                  1 Embed
                 </Link>
                 , then return here to extract it.
               </EmptyState>
@@ -165,6 +165,13 @@ export function RecoverPage() {
                 ]}
                 note="The CRC and hash are checked after extraction. The preview is decoded from the recovered bytes."
               />
+
+              <p className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="label">session key</span>
+                <span className="num text-[10.5px] leading-relaxed text-ink">
+                  {artifact?.key_fingerprint ?? "—"}
+                </span>
+              </p>
 
               {recovery.error ? (
                 <p

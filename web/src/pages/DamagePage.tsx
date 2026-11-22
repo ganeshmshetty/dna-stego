@@ -47,7 +47,7 @@ export function DamagePage() {
 
   return (
     <Page
-      step="Step 3 / Damage"
+      step="Step 2 / Damage"
       title="Sequence the stego DNA"
       description="Substitution-only model. Molecular indels would frameshift the protein and are out of scope; read-level indels need alignment."
     >
@@ -137,7 +137,7 @@ export function DamagePage() {
             <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
               Embed a message on{" "}
               <Link to="/embed" className="text-ink underline decoration-rule underline-offset-2">
-                2 Embed
+                1 Embed
               </Link>{" "}
               first; sequencing edits the active stego sequence.
             </p>
@@ -165,7 +165,7 @@ export function DamagePage() {
               <EmptyState title="Embed a message first">
                 Sequencing needs a stego sequence. Embed a message on{" "}
                 <Link to="/embed" className="text-ink underline decoration-rule underline-offset-2">
-                  2 Embed
+                  1 Embed
                 </Link>
                 , then return here to simulate reads.
               </EmptyState>
