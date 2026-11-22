@@ -1,5 +1,6 @@
-import type { EvaluationRun } from "@/lib/types"
-import { fmtFixed, fmtInt } from "@/lib/format"
+import type { ReactNode } from "react"
+
+import { cn } from "@/lib/utils"
 import {
   Table,
   TableBody,
@@ -9,48 +10,58 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-export function MetricsTable({ run }: { run: EvaluationRun }) {
+export interface MetricRow {
+  label: string
+  value: ReactNode
+  tone?: "ink" | "verified" | "damaged" | "muted"
+}
+
+const TONE_CLASS = {
+  ink: "text-ink",
+  verified: "text-verified",
+  damaged: "text-damaged",
+  muted: "text-ink-muted",
+} as const
+
+export function MetricsTable({
+  rows,
+  caption,
+}: {
+  rows: MetricRow[]
+  caption?: ReactNode
+}) {
   return (
     <figure className="min-w-0">
       <Table className="text-[11.5px]">
         <TableHeader>
           <TableRow className="border-rule hover:bg-transparent">
-            <TableHead className="label h-8 px-2 text-left">Preset</TableHead>
-            <TableHead className="label h-8 px-2 text-right">BER post-ECC</TableHead>
-            <TableHead className="label h-8 px-2 text-right">bits/nt</TableHead>
-            <TableHead className="label h-8 px-2 text-right">Steg. AUC</TableHead>
-            <TableHead className="label h-8 px-2 text-right">TPR @1% FPR</TableHead>
-            <TableHead className="label h-8 px-2 text-right">ID accuracy</TableHead>
+            <TableHead className="label h-8 px-2 text-left">Metric</TableHead>
+            <TableHead className="label h-8 px-2 text-right">Value</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {run.metrics.map((row) => (
-            <TableRow key={row.preset} className="border-rule hover:bg-transparent">
-              <TableCell className="px-2 py-2 text-[12px] text-ink capitalize">{row.preset}</TableCell>
-              <TableCell className="num px-2 py-2 text-right">
-                {fmtFixed(row.ber_post_ecc, 4)}
+          {rows.map((row) => (
+            <TableRow key={row.label} className="border-rule hover:bg-transparent">
+              <TableCell className="px-2 py-2 text-[12px] text-ink-muted">
+                {row.label}
               </TableCell>
-              <TableCell className="num px-2 py-2 text-right">
-                {fmtFixed(row.bits_per_nt, 3)}
-              </TableCell>
-              <TableCell className="num px-2 py-2 text-right">
-                {fmtFixed(row.steganalysis_auc, 3)}
-              </TableCell>
-              <TableCell className="num px-2 py-2 text-right">
-                {fmtFixed(row.verify_tpr_at_1pct_fpr, 3)}
-              </TableCell>
-              <TableCell className="num px-2 py-2 text-right">
-                {fmtFixed(row.id_accuracy, 3)}
+              <TableCell
+                className={cn(
+                  "num px-2 py-2 text-right text-[12px]",
+                  TONE_CLASS[row.tone ?? "ink"],
+                )}
+              >
+                {row.value}
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
-      <figcaption className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
-        Saved run <span className="num">{run.run_id}</span> · seeds{" "}
-        <span className="num">{run.seeds.map((seed) => fmtInt(seed)).join(", ")}</span>. Values
-        are read from the saved run, not computed here.
-      </figcaption>
+      {caption ? (
+        <figcaption className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
+          {caption}
+        </figcaption>
+      ) : null}
     </figure>
   )
 }

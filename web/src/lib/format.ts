@@ -8,6 +8,10 @@ export function fmtBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+export function fmtGenes(value: number): string {
+  return `${fmtInt(value)} ${value === 1 ? "gene" : "genes"}`
+}
+
 export function fmtPct(fraction: number, places = 2): string {
   return `${(fraction * 100).toFixed(places)}%`
 }

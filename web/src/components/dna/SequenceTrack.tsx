@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 
-import type { Alignment } from "@/lib/align"
 import { cn } from "@/lib/utils"
+
+export interface SequenceDiff {
+  before: string
+  after: string
+  changed: boolean[]
+}
 
 interface SequenceTrackProps {
   label: string
@@ -9,7 +14,7 @@ interface SequenceTrackProps {
   seq?: string
   marks?: number[]
   showMarks?: boolean
-  diff?: Alignment
+  diff?: SequenceDiff
   className?: string
 }
 

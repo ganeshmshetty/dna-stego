@@ -12,50 +12,29 @@ import { createSession } from "@/lib/api"
 import type { Artifact } from "@/lib/types"
 
 interface SessionContextValue {
+  /** The latest artifact returned by the engine. Each mutation replaces it. */
   artifact: Artifact | null
-  /** Artifact fields invalidated by a control change since they were computed. */
-  stale: ReadonlySet<string>
-  setArtifact: (artifact: Artifact, staleFields?: Iterable<string>) => void
-  markStale: (fields: Iterable<string>) => void
-  clearStale: (fields: Iterable<string>) => void
-  isStale: (field: string) => boolean
+  setArtifact: (artifact: Artifact) => void
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [artifact, setArtifactState] = useState<Artifact | null>(null)
-  const [stale, setStale] = useState<ReadonlySet<string>>(() => new Set())
 
   useEffect(() => {
+    // Reserve a session as soon as the app mounts. Every API call also
+    // ensures one, so a failure here is harmless until the user acts.
     void createSession().catch(() => undefined)
   }, [])
 
-  const setArtifact = useCallback(
-    (next: Artifact, staleFields: Iterable<string> = []) => {
-      setArtifactState(next)
-      setStale(new Set(staleFields))
-    },
-    [],
-  )
-
-  const markStale = useCallback((fields: Iterable<string>) => {
-    setStale((current) => new Set([...current, ...fields]))
+  const setArtifact = useCallback((next: Artifact) => {
+    setArtifactState(next)
   }, [])
-
-  const clearStale = useCallback((fields: Iterable<string>) => {
-    setStale((current) => {
-      const next = new Set(current)
-      for (const field of fields) next.delete(field)
-      return next
-    })
-  }, [])
-
-  const isStale = useCallback((field: string) => stale.has(field), [stale])
 
   const value = useMemo<SessionContextValue>(
-    () => ({ artifact, stale, setArtifact, markStale, clearStale, isStale }),
-    [artifact, stale, setArtifact, markStale, clearStale, isStale],
+    () => ({ artifact, setArtifact }),
+    [artifact, setArtifact],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

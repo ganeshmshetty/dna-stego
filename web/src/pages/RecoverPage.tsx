@@ -1,63 +1,34 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 
-import { recover } from "@/lib/api"
+import { recoverMessage } from "@/lib/api"
 import { describeError, type ErrorDescription } from "@/lib/errors"
-import { fmtBytes, fmtInt, fmtPct, fmtRate } from "@/lib/format"
+import { fmtInt, fmtPct } from "@/lib/format"
 import { useSession } from "@/lib/session"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Page } from "@/components/common/Page"
 import { EmptyState, ErrorNote } from "@/components/common/EmptyState"
 import { FieldRow } from "@/components/common/FieldRow"
-
-function ShareBar({
-  label,
-  value,
-  total,
-  tone,
-}: {
-  label: string
-  value: number
-  total: number
-  tone: "muted" | "ink" | "verified" | "damaged"
-}) {
-  const share = total === 0 ? 0 : Math.min(1, value / total)
-  return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)_auto] items-center gap-3">
-      <span className="label">{label}</span>
-      <span aria-hidden="true" className="block h-2 border border-rule bg-paper">
-        <span
-          className={cn(
-            "block h-full",
-            tone === "muted" && "bg-ink-muted/40",
-            tone === "ink" && "bg-ink",
-            tone === "verified" && "bg-verified",
-            tone === "damaged" && "bg-damaged",
-          )}
-          style={{ width: `${share * 100}%` }}
-        />
-      </span>
-      <span className="num w-[92px] text-right text-[11px] text-ink">{fmtInt(value)}</span>
-    </div>
-  )
-}
+import { Page } from "@/components/common/Page"
+import { VerdictBlock } from "@/components/common/VerdictBlock"
 
 export function RecoverPage() {
-  const { artifact, setArtifact, isStale, stale } = useSession()
+  const { artifact, setArtifact } = useSession()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<ErrorDescription | null>(null)
 
+  const stego = artifact?.stego ?? null
+  const channel = artifact?.channel ?? null
+  const message = artifact?.message ?? null
+  const recovery = artifact?.recovery ?? null
+
   async function submit() {
-    if (busy) return
+    if (busy || !stego) return
     setBusy(true)
     setError(null)
     try {
-      const next = await recover()
-      setArtifact(
-        next,
-        [...stale].filter((field) => field !== "recovery"),
-      )
+      const next = await recoverMessage()
+      setArtifact(next)
     } catch (caught) {
       setError(describeError(caught))
     } finally {
@@ -65,19 +36,11 @@ export function RecoverPage() {
     }
   }
 
-  const recovery = artifact?.recovery
-  const staleRecovery = isStale("recovery")
-  const match = Boolean(
-    recovery &&
-      recovery.recovered_sha256 &&
-      recovery.recovered_sha256 === artifact?.file.sha256,
-  )
-
   return (
     <Page
-      step="Step 3 / Recover"
-      title="Decode the archive"
-      description="Unscramble, Reed–Solomon decode and verify the CRC for every surviving strand. The recovered bytes are compared to the original by SHA-256."
+      step="Step 4 / Recover"
+      title="Recover the hidden message"
+      description="Extract the payload from the consensus sequence, check the CRC, then compare the recovered SHA-256 with the message that was embedded."
     >
       <div className="grid gap-8 lg:grid-cols-[340px_minmax(0,1fr)]">
         <form
@@ -86,38 +49,41 @@ export function RecoverPage() {
             void submit()
           }}
           className="min-w-0"
-          aria-label="Decode the archive"
+          aria-label="Recover the message"
         >
           <div className="flex items-baseline justify-between gap-4 border-b border-rule pb-2">
             <span className="label">Input</span>
             <span className="num text-[10.5px] text-ink-muted">
-              {artifact ? fmtBytes(artifact.file.size) : "no file"}
+              {stego
+                ? channel
+                  ? "damaged consensus"
+                  : "clean stego sequence"
+                : "no stego sequence"}
             </span>
           </div>
-          {artifact ? (
+
+          {stego ? (
             <div className="mt-1">
-              <FieldRow label="file" value={artifact.file.name} />
-              <FieldRow label="key" value={artifact.recipient} />
+              <FieldRow label="message" value={message?.name ?? "—"} />
               <FieldRow
-                label="channel"
-                value={
-                  artifact.channel.applied
-                    ? `${fmtPct(artifact.channel.sub, 2)} sub · ${fmtPct(artifact.channel.dropout, 0)} drop`
-                    : "clean"
-                }
+                label="payload"
+                value={message ? `${fmtInt(message.size)} B` : "—"}
               />
+              <FieldRow label="stego" value={`${fmtInt(stego.sequence.length)} nt`} />
               <FieldRow
-                label="strands in"
-                value={fmtInt(
-                  artifact.noisy_strands?.length ?? artifact.strands.length,
-                )}
+                label="input"
+                value={
+                  channel
+                    ? `${fmtInt(channel.coverage)}× · ${fmtPct(channel.sub_rate, 2)} sub`
+                    : "no channel applied"
+                }
               />
             </div>
           ) : (
             <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
-              Encode a file on{" "}
-              <Link to="/encode" className="text-ink underline decoration-rule underline-offset-2">
-                1 Encode
+              Embed a message on{" "}
+              <Link to="/embed" className="text-ink underline decoration-rule underline-offset-2">
+                2 Embed
               </Link>{" "}
               first.
             </p>
@@ -126,16 +92,18 @@ export function RecoverPage() {
           <Button
             type="submit"
             size="lg"
-            disabled={busy || !artifact}
+            disabled={busy || !stego}
             className="mt-4 h-9 w-full rounded-none text-[12.5px]"
           >
-            {busy ? "Decoding…" : "Decode"}
+            {busy ? "Recovering…" : "Recover message"}
           </Button>
 
           <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
-            {artifact?.channel.applied
-              ? "The active channel is damaged. Decode reconstructs from the surviving strands and reports the residual error rate."
-              : "A clean channel decodes the artifact as encoded. Apply noise on 2 Channel to exercise erasures."}
+            {!stego
+              ? "Recovery needs a stego sequence; embed a message on 2 Embed first."
+              : channel
+                ? "Recovery reads the consensus written by Step 3. Re-run sequencing first if the channel parameters change."
+                : "No channel is applied, so recovery reads the stego sequence directly. Damage it on 3 Damage to exercise the reads."}
           </p>
 
           {error ? (
@@ -150,136 +118,90 @@ export function RecoverPage() {
             <h2 id="recover-result" className="label">
               Result
             </h2>
-            <span className="num text-[10.5px] text-ink-muted">original · decoded</span>
+            <span className="num text-[10.5px] text-ink-muted">crc · sha-256 · bytes</span>
           </div>
 
-          {!artifact ? (
+          {!stego ? (
             <div className="mt-3">
-              <EmptyState title="Nothing to decode">
-                Encode a file first. The result reports byte recovery, the two SHA-256 hashes and
-                the pre-/post-ECC BER.
-              </EmptyState>
-            </div>
-          ) : staleRecovery ? (
-            <div className="mt-3">
-              <EmptyState title="Recovery is not current">
-                Press Decode to compute recovery for the current channel. Any previously computed
-                figures are marked stale and are not shown.
+              <EmptyState title="Embed a message first">
+                Recovery needs a stego sequence. Embed a message on{" "}
+                <Link to="/embed" className="text-ink underline decoration-rule underline-offset-2">
+                  2 Embed
+                </Link>
+                , then return here to extract it.
               </EmptyState>
             </div>
           ) : !recovery ? (
             <div className="mt-3">
-              <EmptyState title="No decode yet">
-                Press Decode. With no channel applied this returns the clean-channel result.
+              <EmptyState title="No recovery yet">
+                Press Recover message. The verdict, CRC check, SHA-256 comparison, byte count and
+                decoded preview appear here.
               </EmptyState>
             </div>
           ) : (
-            <div className="mt-3 border border-rule">
-              <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-rule px-4 py-3">
-                <div className="flex items-baseline gap-2.5">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "inline-block size-2 translate-y-[-2px]",
-                      recovery.ok ? "bg-verified" : "bg-damaged",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "text-[24px] leading-none font-medium tracking-[-0.015em]",
-                      recovery.ok ? "text-verified" : "text-damaged",
-                    )}
-                  >
-                    {recovery.ok ? "Recovered" : "Partial recovery"}
+            <div className="mt-3">
+              <VerdictBlock
+                ok={recovery.ok}
+                verdict={recovery.ok ? "RECOVERED" : "FAILED"}
+                aside="message integrity"
+                rows={[
+                  {
+                    label: "CRC",
+                    value: recovery.crc_ok ? "ok" : "failed",
+                    tone: recovery.crc_ok ? "verified" : "damaged",
+                  },
+                  {
+                    label: "SHA-256",
+                    value: recovery.matches_original
+                      ? "matches original"
+                      : "does not match",
+                    tone: recovery.matches_original ? "verified" : "damaged",
+                  },
+                  {
+                    label: "Bytes",
+                    value:
+                      recovery.length === null ? "—" : `${fmtInt(recovery.length)} B`,
+                  },
+                ]}
+                note="The CRC and hash are checked after extraction. The preview is decoded from the recovered bytes."
+              />
+
+              {recovery.error ? (
+                <p
+                  role="alert"
+                  className="mt-3 border-l border-damaged pl-3 text-[12px] leading-snug text-damaged"
+                >
+                  {recovery.error}
+                </p>
+              ) : null}
+
+              <div className="mt-4 border border-rule px-4 py-3">
+                <p className="label">SHA-256</p>
+                <p
+                  className={cn(
+                    "num mt-1 text-[10.5px] leading-relaxed break-all",
+                    recovery.matches_original ? "text-ink" : "text-damaged",
+                  )}
+                >
+                  {recovery.sha256 ?? "—"}
+                </p>
+                {message ? (
+                  <p className="num mt-1 text-[10px] leading-relaxed break-all text-ink-muted">
+                    original {message.sha256}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-baseline justify-between gap-4 border-b border-rule pb-2">
+                  <h3 className="label">Message preview</h3>
+                  <span className="num text-[10.5px] text-ink-muted">
+                    {fmtInt(recovery.bits_read)} bits read
                   </span>
                 </div>
-                <span className="num text-[11px] text-ink-muted">
-                  {fmtInt(recovery.bytes_recovered)} / {fmtInt(artifact.file.size)} B
-                </span>
-              </div>
-
-              <div className="border-b border-rule px-4 py-3">
-                <p className="label">SHA-256</p>
-                <div className="mt-2 space-y-2">
-                  <div className="grid gap-1 sm:grid-cols-[76px_minmax(0,1fr)] sm:gap-3">
-                    <span className="label pt-px">original</span>
-                    <span className="num text-[10.5px] leading-relaxed break-all text-ink">
-                      {artifact.file.sha256}
-                    </span>
-                  </div>
-                  <div className="grid gap-1 sm:grid-cols-[76px_minmax(0,1fr)] sm:gap-3">
-                    <span className="label pt-px">recovered</span>
-                    <span
-                      className={cn(
-                        "num text-[10.5px] leading-relaxed break-all",
-                        match ? "text-ink" : "text-damaged",
-                      )}
-                    >
-                      {recovery.recovered_sha256 ?? "—"}
-                    </span>
-                  </div>
-                  <p className="pl-0 sm:pl-[88px]">
-                    <span
-                      className={cn(
-                        "label",
-                        match ? "text-verified" : "text-damaged",
-                      )}
-                    >
-                      {match ? "hashes match" : "hashes differ"}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 border-b border-rule">
-                <div className="border-r border-rule px-4 py-3">
-                  <FieldRow
-                    label="BER pre-ECC"
-                    value={fmtRate(recovery.ber_pre_ecc)}
-                    className="border-0 py-0"
-                  />
-                </div>
-                <div className="px-4 py-3">
-                  <FieldRow
-                    label="BER post-ECC"
-                    value={fmtRate(recovery.ber_post_ecc)}
-                    className="border-0 py-0"
-                  />
-                </div>
-              </div>
-
-              <div className="px-4 py-4">
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <p className="label">Strands in → surviving → bytes</p>
-                  <p className="num text-[10.5px] text-ink-muted">
-                    {fmtInt(recovery.strands_in)} · {fmtInt(recovery.strands_out)} ·{" "}
-                    {fmtInt(recovery.bytes_recovered)}
-                  </p>
-                </div>
-                <div className="mt-3 space-y-2">
-                  <ShareBar
-                    label="strands in"
-                    value={recovery.strands_in}
-                    total={recovery.strands_in}
-                    tone="muted"
-                  />
-                  <ShareBar
-                    label="surviving"
-                    value={recovery.strands_out}
-                    total={recovery.strands_in}
-                    tone="ink"
-                  />
-                  <ShareBar
-                    label="bytes back"
-                    value={recovery.bytes_recovered}
-                    total={artifact.file.size}
-                    tone={recovery.ok ? "verified" : "damaged"}
-                  />
-                </div>
-                <p className="mt-3 text-[10.5px] leading-relaxed text-ink-muted">
-                  Each row is a share of its own total; the three bars are not additive. Erasures
-                  are counted as strand loss before reconstruction.
-                </p>
+                <pre className="mt-2 min-h-[80px] border border-rule bg-paper p-3 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap text-ink">
+                  {recovery.preview || "No bytes returned."}
+                </pre>
               </div>
             </div>
           )}

@@ -2,13 +2,14 @@ import { useEffect } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import { Footer } from "@/components/layout/Footer"
+import { StaleNotice } from "@/components/layout/StaleNotice"
 import { TopBar } from "@/components/layout/TopBar"
 import { SessionProvider } from "@/lib/session"
-import { ChannelPage } from "@/pages/ChannelPage"
-import { EncodePage } from "@/pages/EncodePage"
+import { CoverPage } from "@/pages/CoverPage"
+import { DamagePage } from "@/pages/DamagePage"
+import { DetectPage } from "@/pages/DetectPage"
+import { EmbedPage } from "@/pages/EmbedPage"
 import { RecoverPage } from "@/pages/RecoverPage"
-import { ResultsPage } from "@/pages/ResultsPage"
-import { VerifyPage } from "@/pages/VerifyPage"
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -25,15 +26,16 @@ export default function App() {
         <ScrollToTop />
         <div className="flex min-h-screen flex-col">
           <TopBar />
+          <StaleNotice />
           <div className="flex-1">
             <Routes>
-              <Route path="/" element={<Navigate to="/encode" replace />} />
-              <Route path="/encode" element={<EncodePage />} />
-              <Route path="/channel" element={<ChannelPage />} />
+              <Route path="/" element={<Navigate to="/cover" replace />} />
+              <Route path="/cover" element={<CoverPage />} />
+              <Route path="/embed" element={<EmbedPage />} />
+              <Route path="/damage" element={<DamagePage />} />
               <Route path="/recover" element={<RecoverPage />} />
-              <Route path="/verify" element={<VerifyPage />} />
-              <Route path="/results" element={<ResultsPage />} />
-              <Route path="*" element={<Navigate to="/encode" replace />} />
+              <Route path="/detect" element={<DetectPage />} />
+              <Route path="*" element={<Navigate to="/cover" replace />} />
             </Routes>
           </div>
           <Footer />

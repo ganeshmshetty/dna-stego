@@ -1,5 +1,10 @@
 # TraceDNA — Design Specification
 
+> **Superseded 2026-11-22.** This document describes the original DNA-*storage* prototype
+> (invented strands plus a per-recipient watermark). The project pivoted to codon-level
+> steganography on real *E. coli* coding sequences. See `README.md` for the current design.
+> The codec, watermark and verifier described below were removed from the repository.
+
 **Date:** 2026-11-22
 **Status:** Draft for review
 **Scope:** Local-only prototype. No deployment, no wet lab.
